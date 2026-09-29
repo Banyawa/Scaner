@@ -38,7 +38,7 @@ class ProjectRepository(private val rootDir: File, private val clock: () -> Long
     fun get(projectId: String): Project? = read(File(projectDir(projectId), PROJECT_FILE))
 
     @Synchronized
-    fun create(name: String, location: String = "", notes: String = ""): Project {
+    fun create(name: String, location: String = "", notes: String = "", pin: GeoPin? = null): Project {
         val now = clock()
         val project = Project(
             id = newId(),
@@ -47,6 +47,7 @@ class ProjectRepository(private val rootDir: File, private val clock: () -> Long
             notes = notes.trim(),
             createdAt = now,
             updatedAt = now,
+            pin = pin,
         )
         write(project)
         return project

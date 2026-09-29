@@ -45,7 +45,7 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
             ExportFormat.DXF_PLAN, ExportFormat.DXF_ELEVATIONS -> analysis.elevations(project.id, scan)
             else -> emptyList()
         }
-        val title = "${project.name} - ${scan.name}"
+        val title = "${project.name} - ${scan.name}" + (project.pin?.let { " (${it.coordinates})" } ?: "")
         return withContext(Dispatchers.IO) {
             val dir = File(context.cacheDir, "exports").apply { mkdirs() }
             dir.listFiles()?.forEach { it.delete() }

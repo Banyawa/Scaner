@@ -24,6 +24,25 @@
     <string name="project_missing">Project not found</string>
     <string name="project_delete_title">Delete project?</string>
     <string name="project_delete_message">\"%1$s\" and all of its scans will be permanently deleted.</string>
+    <string name="pin_none">No map pin</string>
+    <string name="pin_locating">Finding your location…</string>
+    <string name="pin_improving">improving accuracy…</string>
+    <string name="pin_accuracy">GPS ±%1$d m</string>
+    <string name="pin_on_map">Picked on the map</string>
+    <string name="pin_clear">Remove pin</string>
+    <string name="pin_here">Pin current location</string>
+    <string name="pin_pick">Pick on map</string>
+    <string name="pin_permission_denied">Location permission was not given. You can pick the spot on the map instead.</string>
+    <string name="pin_location_off">Location is turned off on this phone.</string>
+    <string name="pin_open_settings">Turn on location</string>
+    <string name="pin_no_fix">Couldn\'t get a location fix. Move to open sky or pick the spot on the map.</string>
+    <string name="pin_pick_title">Pin the site</string>
+    <string name="pin_use_here">Use this spot</string>
+    <string name="pin_search_hint">Search an address or place</string>
+    <string name="pin_search_none">No places found</string>
+    <string name="pin_my_location">My location</string>
+    <string name="pin_open_map">Open map</string>
+    <string name="pin_osm_attribution" translatable="false">© OpenStreetMap contributors</string>
     <string name="projects_empty_title">No projects yet</string>
     <string name="projects_empty_body">Create a project for each job site, then scan rooms in 3D to get dimensions for shop drawings.</string>
     <plurals name="scan_count">

@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apartment
@@ -48,6 +50,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.banyawa.sitescanner.R
 import com.banyawa.sitescanner.app
+import com.banyawa.sitescanner.core.project.GeoPin
 import com.banyawa.sitescanner.core.project.Project
 import com.banyawa.sitescanner.core.project.ProjectRepository
 import com.banyawa.sitescanner.ui.common.EmptyState
@@ -70,9 +73,9 @@ class ProjectListViewModel(private val repository: ProjectRepository) : ViewMode
         }
     }
 
-    fun create(name: String, location: String, notes: String, onCreated: (Project) -> Unit) {
+    fun create(name: String, location: String, notes: String, pin: GeoPin?, onCreated: (Project) -> Unit) {
         viewModelScope.launch {
-            val project = withContext(Dispatchers.IO) { repository.create(name, location, notes) }
+            val project = withContext(Dispatchers.IO) { repository.create(name, location, notes, pin) }
             refresh()
             onCreated(project)
         }
@@ -135,10 +138,11 @@ fun ProjectListScreen(onOpenProject: (String) -> Unit) {
     if (showCreate) {
         ProjectDialog(
             title = stringResource(R.string.project_new),
+            autoPin = true,
             onDismiss = { showCreate = false },
-            onConfirm = { name, location, notes ->
+            onConfirm = { name, location, notes, pin ->
                 showCreate = false
-                vm.create(name, location, notes) { onOpenProject(it.id) }
+                vm.create(name, location, notes, pin) { onOpenProject(it.id) }
             },
         )
     }
@@ -167,8 +171,8 @@ private fun ProjectCard(project: Project, onClick: () -> Unit, onDelete: () -> U
         Row(Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(project.name, style = MaterialTheme.typography.titleMedium)
-                if (project.location.isNotBlank()) {
-                    Text(project.location, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                (project.location.takeIf { it.isNotBlank() } ?: project.pin?.coordinates)?.let {
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(
                     pluralStringResource(R.plurals.scan_count, project.scans.size, project.scans.size) +
@@ -184,24 +188,32 @@ private fun ProjectCard(project: Project, onClick: () -> Unit, onDelete: () -> U
     }
 }
 
-/** Create / edit project details. */
+/**
+ * Create / edit project details. With [autoPin] the site is pinned where the phone is as
+ * soon as the dialog opens; the address found there fills the location unless typed over.
+ */
 @Composable
 fun ProjectDialog(
     title: String,
     initialName: String = "",
     initialLocation: String = "",
     initialNotes: String = "",
+    initialPin: GeoPin? = null,
+    autoPin: Boolean = false,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, location: String, notes: String) -> Unit,
+    onConfirm: (name: String, location: String, notes: String, pin: GeoPin?) -> Unit,
 ) {
     var name by rememberSaveable { mutableStateOf(initialName) }
     var location by rememberSaveable { mutableStateOf(initialLocation) }
     var notes by rememberSaveable { mutableStateOf(initialNotes) }
+    var pin by rememberSaveable(saver = GeoPinStateSaver) { mutableStateOf(initialPin) }
+    // The last address filled in for a pin: replaced when the pin moves, kept once edited.
+    var foundAddress by rememberSaveable { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
@@ -214,6 +226,17 @@ fun ProjectDialog(
                     label = { Text(stringResource(R.string.project_location)) },
                     singleLine = true,
                 )
+                SitePinField(
+                    pin = pin,
+                    onPinChange = { pin = it },
+                    autoLocate = autoPin,
+                    onAddress = { address ->
+                        if (location.isBlank() || location == foundAddress) {
+                            location = address
+                            foundAddress = address
+                        }
+                    },
+                )
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
@@ -223,7 +246,7 @@ fun ProjectDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = name.isNotBlank(), onClick = { onConfirm(name, location, notes) }) {
+            TextButton(enabled = name.isNotBlank(), onClick = { onConfirm(name, location, notes, pin) }) {
                 Text(stringResource(R.string.action_save))
             }
         },

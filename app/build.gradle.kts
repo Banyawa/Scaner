@@ -90,6 +90,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     implementation(libs.arcore)
+    implementation(libs.osmdroid)
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)

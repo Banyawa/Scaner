@@ -78,6 +78,23 @@ class ProjectRepositoryTest {
     }
 
     @Test
+    fun sitePinSurvivesReloadAndOldProjectsHaveNone() {
+        val repo = repo()
+        val pin = GeoPin(13.756331, 100.501765, accuracyM = 8f)
+        val p = repo.create("Site", "Bangkok", pin = pin)
+        assertEquals(pin, ProjectRepository(tmp.root).get(p.id)!!.pin)
+        assertEquals("13.756331, 100.501765", pin.coordinates)
+
+        val moved = repo.update(p.copy(pin = GeoPin(13.7, 100.5)))
+        assertNull(ProjectRepository(tmp.root).get(moved.id)!!.pin!!.accuracyM)
+
+        // A project saved before pins existed still loads.
+        File(tmp.root, "old").mkdirs()
+        File(tmp.root, "old/project.json").writeText("""{"id":"old","name":"Old","createdAt":1,"updatedAt":1}""")
+        assertNull(repo.get("old")!!.pin)
+    }
+
+    @Test
     fun corruptProjectIsSkipped() {
         val repo = repo()
         repo.create("ok")

@@ -44,15 +44,29 @@ data class ScanInfo(
     val openingEdits: OpeningEdits? = null,
 )
 
+/** A site's position on the map (WGS84 degrees), from GPS or picked by hand. */
+@Serializable
+data class GeoPin(
+    val latitude: Double,
+    val longitude: Double,
+    /** Horizontal accuracy in metres for a GPS fix; null when picked on the map. */
+    val accuracyM: Float? = null,
+) {
+    /** "13.756331, 100.501765": what map apps and search boxes accept. */
+    val coordinates: String get() = String.format(java.util.Locale.US, "%.6f, %.6f", latitude, longitude)
+}
+
 @Serializable
 data class Project(
     val id: String,
     val name: String,
+    /** Address or description of the site, as typed or looked up from [pin]. */
     val location: String = "",
     val notes: String = "",
     val createdAt: Long,
     val updatedAt: Long,
     val scans: List<ScanInfo> = emptyList(),
+    val pin: GeoPin? = null,
 ) {
     fun scan(id: String): ScanInfo? = scans.firstOrNull { it.id == id }
 }

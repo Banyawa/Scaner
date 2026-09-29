@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Architecture
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.ViewInAr
@@ -73,6 +74,7 @@ import com.banyawa.sitescanner.R
 import com.banyawa.sitescanner.SiteScannerApp
 import com.banyawa.sitescanner.app
 import com.banyawa.sitescanner.core.project.CaptureMode
+import com.banyawa.sitescanner.core.project.GeoPin
 import com.banyawa.sitescanner.core.project.Measurement
 import com.banyawa.sitescanner.core.project.Project
 import com.banyawa.sitescanner.core.project.ScanInfo
@@ -86,6 +88,7 @@ import com.banyawa.sitescanner.ui.common.formatCount
 import com.banyawa.sitescanner.ui.common.formatDateTime
 import com.banyawa.sitescanner.ui.common.formatDuration
 import com.banyawa.sitescanner.ui.projects.ProjectDialog
+import com.banyawa.sitescanner.ui.projects.openInMaps
 import com.google.ar.core.ArCoreApk
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -121,11 +124,11 @@ class ProjectDetailViewModel(private val projectId: String, private val app: Sit
         }
     }
 
-    fun updateDetails(name: String, location: String, notes: String) {
+    fun updateDetails(name: String, location: String, notes: String, pin: GeoPin?) {
         val current = _project.value ?: return
         viewModelScope.launch {
             _project.value = withContext(Dispatchers.IO) {
-                repository.update(current.copy(name = name.trim(), location = location.trim(), notes = notes.trim()))
+                repository.update(current.copy(name = name.trim(), location = location.trim(), notes = notes.trim(), pin = pin))
             }
         }
     }
@@ -264,10 +267,11 @@ fun ProjectDetailScreen(
             initialName = current.name,
             initialLocation = current.location,
             initialNotes = current.notes,
+            initialPin = current.pin,
             onDismiss = { editing = false },
-            onConfirm = { name, location, notes ->
+            onConfirm = { name, location, notes, pin ->
                 editing = false
-                vm.updateDetails(name, location, notes)
+                vm.updateDetails(name, location, notes, pin)
             },
         )
     }
@@ -333,6 +337,15 @@ private fun ProjectHeader(project: Project, arSupported: Boolean?) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         if (project.location.isNotBlank()) {
             Text(project.location, style = MaterialTheme.typography.titleSmall)
+        }
+        project.pin?.let { pin ->
+            val context = LocalContext.current
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Place, contentDescription = null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(4.dp))
+                Text(pin.coordinates, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                TextButton(onClick = { openInMaps(context, pin, project.name) }) { Text(stringResource(R.string.pin_open_map)) }
+            }
         }
         if (project.notes.isNotBlank()) {
             Text(project.notes, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
