@@ -3,6 +3,7 @@ package com.banyawa.sitescanner.scan
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
+import android.os.Build
 import android.os.SystemClock
 import android.util.Log
 import com.banyawa.sitescanner.core.geometry.Mat4
@@ -29,6 +30,7 @@ import com.google.ar.core.exceptions.SessionPausedException
 import java.util.UUID
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlin.math.roundToInt
 
 /**
  * GL-thread side of scanning: updates the ARCore session, draws the camera feed, the
@@ -137,33 +139,62 @@ class ScanRenderer(
 
     // --- depth fusion -------------------------------------------------------------------
 
+    /**
+     * Raw depth first; smoothed depth once raw depth proves too sparse; ARCore's feature
+     * points when depth is unsupported or never delivers a frame.
+     */
     private fun integrate(frame: Frame, camera: Camera, now: Long) {
         if (controller.isBusy || controller.integrator.isFull) return
         camera.pose.toMatrix(pose, 0)
         if (!keyframes.shouldCapture(pose, now)) return
         if (depthEnabled) {
+            if (!capture.preferSmoothed && controller.depthYield.tooSparse()) {
+                capture.preferSmoothed = true
+                Log.i(TAG, "Raw depth keeps ${controller.depthYield.fraction()} of pixels: switching to smoothed depth")
+            }
             val depthFrame = try {
                 capture.capture(frame, camera, pose, withColor = true)
             } catch (e: Exception) {
                 Log.w(TAG, "Depth capture failed", e)
                 null
             }
-            if (depthFrame != null) controller.submitDepth(depthFrame)
-        } else {
-            val cloud = frame.acquirePointCloud()
-            try {
-                if (cloud.timestamp != lastFeatureTimestamp) {
-                    lastFeatureTimestamp = cloud.timestamp
-                    val buffer = cloud.points.duplicate()
-                    val n = buffer.remaining() / 4
-                    val xyzc = FloatArray(n * 4)
-                    buffer.get(xyzc)
-                    controller.submitFeaturePoints(xyzc, n)
-                }
-            } finally {
-                cloud.close()
+            if (depthFrame != null) {
+                controller.submitDepth(depthFrame, raw = !capture.usingSmoothedDepth)
+                return
             }
+            if (controller.depthFrames > 0 || controller.recordingMs() < NO_DEPTH_FALLBACK_MS) return
         }
+        integrateFeaturePoints(frame)
+    }
+
+    private fun integrateFeaturePoints(frame: Frame) {
+        val cloud = frame.acquirePointCloud()
+        try {
+            if (cloud.timestamp != lastFeatureTimestamp) {
+                lastFeatureTimestamp = cloud.timestamp
+                val buffer = cloud.points.duplicate()
+                val n = buffer.remaining() / 4
+                val xyzc = FloatArray(n * 4)
+                buffer.get(xyzc)
+                controller.submitFeaturePoints(xyzc, n)
+            }
+        } finally {
+            cloud.close()
+        }
+    }
+
+    /** One line for troubleshooting from a screenshot. */
+    private fun diagnostics(camera: Camera): String {
+        val source = when {
+            !depthEnabled -> "no depth API: feature points"
+            controller.depthFrames == 0 && controller.featureFrames > 0 -> "no depth frames: feature points"
+            capture.usingSmoothedDepth -> "smoothed depth"
+            else -> "raw depth"
+        }
+        val raw = controller.depthYield.fraction()?.let { " · raw kept ${(it * 100).roundToInt()}%" }.orEmpty()
+        val tracking = if (camera.trackingState == TrackingState.TRACKING) "" else " · ${camera.trackingState}/${camera.trackingFailureReason}"
+        return "${Build.MANUFACTURER} ${Build.MODEL} · $source · ${controller.depthFrames + controller.featureFrames} frames · " +
+            "last +${controller.lastAccepted}$raw$tracking"
     }
 
     // --- measuring ----------------------------------------------------------------------
@@ -315,6 +346,7 @@ class ScanRenderer(
                 liveDistanceM = live,
                 measurementCount = measurements.size,
                 labels = labels,
+                diagnostics = diagnostics(camera),
             )
         }
     }
@@ -328,11 +360,15 @@ class ScanRenderer(
         private const val TAG = "ScanRenderer"
         private const val NEAR_M = 0.05f
         private const val FAR_M = 100f
-        private const val POINT_SIZE_PX = 5f
+        private const val POINT_SIZE_PX = 6f
+
+        /** Recording this long without a single depth frame falls back to feature points. */
+        private const val NO_DEPTH_FALLBACK_MS = 4_000L
         private const val UI_INTERVAL_MS = 80L
         private const val MIN_FLOOR_AREA_M2 = 0.5f
 
-        private val SCAN_TINT = floatArrayOf(0.0f, 0.85f, 1.0f, 0.55f)
+        // A light tint: scanned surfaces keep their real colours but stand out from the camera image.
+        private val SCAN_TINT = floatArrayOf(0.0f, 0.85f, 1.0f, 0.3f)
         private val MEASURE_COLOR = floatArrayOf(1.0f, 0.6f, 0.0f, 1f)
         private val PENDING_COLOR = floatArrayOf(1.0f, 0.9f, 0.2f, 1f)
         private val ENDPOINT_COLOR = floatArrayOf(1f, 1f, 1f, 1f)

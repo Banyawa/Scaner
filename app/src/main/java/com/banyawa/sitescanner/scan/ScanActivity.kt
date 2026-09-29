@@ -197,7 +197,7 @@ class ScanActivity : ComponentActivity() {
 
     private fun persist(name: String, result: SessionResult) {
         val repository = (application as SiteScannerApp).repository
-        val depth = renderer.depthEnabled
+        val depth = renderer.depthEnabled && controller.depthFrames > 0
         lifecycleScope.launch {
             val outcome = withContext(Dispatchers.IO) {
                 runCatching {

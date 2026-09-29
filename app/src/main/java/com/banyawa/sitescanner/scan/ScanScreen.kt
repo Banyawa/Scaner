@@ -225,6 +225,9 @@ private fun TopStatus(state: ScanUiState, onBack: () -> Unit, modifier: Modifier
                 color = Color.White.copy(alpha = 0.8f),
                 style = MaterialTheme.typography.bodySmall,
             )
+            if (state.diagnostics.isNotEmpty()) {
+                Text(state.diagnostics, color = Color.White.copy(alpha = 0.55f), style = MaterialTheme.typography.labelSmall)
+            }
         }
         if (state.recording) {
             Box(Modifier.size(12.dp).background(Color.Red, RoundedCornerShape(6.dp)))

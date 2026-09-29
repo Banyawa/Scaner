@@ -3,7 +3,9 @@ package com.banyawa.sitescanner.scan
 import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.StringRes
+import com.banyawa.sitescanner.core.pointcloud.DepthFilter
 import com.banyawa.sitescanner.core.pointcloud.DepthFrame
+import com.banyawa.sitescanner.core.pointcloud.DepthYield
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.pointcloud.ScanIntegrator
 import com.banyawa.sitescanner.core.project.Measurement
@@ -38,6 +40,8 @@ data class ScanUiState(
     val measurementCount: Int = 0,
     val labels: List<ScreenLabel> = emptyList(),
     val saving: Boolean = false,
+    /** Phone, depth source and frame counts: what a screenshot needs for troubleshooting. */
+    val diagnostics: String = "",
 )
 
 sealed interface ScanAction {
@@ -56,7 +60,25 @@ class PreviewSnapshot(val version: Int, val cloud: PointCloud)
  * State shared between the AR renderer (GL thread), the fusion worker and the Compose UI.
  */
 class ScanController {
-    val integrator = ScanIntegrator(voxelSize = VOXEL_SIZE_M, maxVoxels = MAX_VOXELS)
+    // Low-confidence raw depth is let in and has to be seen several times to be saved
+    // (see the weight filter on saving) rather than being thrown away up front.
+    val integrator = ScanIntegrator(voxelSize = VOXEL_SIZE_M, maxVoxels = MAX_VOXELS, filter = DepthFilter(minConfidence = MIN_RAW_CONFIDENCE))
+
+    /** Share of raw depth pixels kept, for switching to smoothed depth when it is too low. */
+    val depthYield = DepthYield()
+
+    @Volatile
+    var depthFrames = 0
+        private set
+
+    @Volatile
+    var featureFrames = 0
+        private set
+
+    /** Points added by the latest frame. */
+    @Volatile
+    var lastAccepted = 0
+        private set
 
     private val worker = Executors.newSingleThreadExecutor { r ->
         Thread(r, "scan-fusion").apply { priority = Thread.NORM_PRIORITY - 1 }
@@ -91,14 +113,29 @@ class ScanController {
         _state.update { it.copy(recording = on) }
     }
 
-    fun elapsedSec(): Int = synchronized(this) {
+    fun elapsedSec(): Int = (recordingMs() / 1000).toInt()
+
+    /** Time spent recording so far, pauses excluded. */
+    fun recordingMs(): Long = synchronized(this) {
         val live = if (recording) SystemClock.elapsedRealtime() - recordingSinceMs else 0L
-        ((recordedMs + live) / 1000).toInt()
+        recordedMs + live
     }
 
-    fun submitDepth(frame: DepthFrame) = submit { integrator.integrate(frame) }
+    /** [raw]: the frame is raw depth, whose yield decides whether to keep using it. */
+    fun submitDepth(frame: DepthFrame, raw: Boolean) = submit {
+        val before = integrator.voxelCount
+        val kept = integrator.integrate(frame)
+        if (raw) depthYield.add(kept, frame.width * frame.height)
+        lastAccepted = integrator.voxelCount - before
+        depthFrames++
+    }
 
-    fun submitFeaturePoints(xyzc: FloatArray, count: Int) = submit { integrator.integrateWorldPoints(xyzc, count) }
+    fun submitFeaturePoints(xyzc: FloatArray, count: Int) = submit {
+        val before = integrator.voxelCount
+        integrator.integrateWorldPoints(xyzc, count)
+        lastAccepted = integrator.voxelCount - before
+        featureFrames++
+    }
 
     private fun submit(work: () -> Unit) {
         if (!busy.compareAndSet(false, true)) return
@@ -152,6 +189,9 @@ class ScanController {
         /** 1 cm voxels: fine enough for shop-drawing detail, coarse enough for phone memory. */
         const val VOXEL_SIZE_M = 0.01f
         const val MAX_VOXELS = 3_000_000
+
+        /** Raw depth confidence (0..255) below which a pixel is not used at all. */
+        private const val MIN_RAW_CONFIDENCE = 60
         private const val PREVIEW_INTERVAL_MS = 400L
         private const val PREVIEW_MAX_POINTS = 400_000
     }

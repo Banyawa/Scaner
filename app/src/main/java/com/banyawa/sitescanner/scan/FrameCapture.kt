@@ -14,15 +14,20 @@ import com.google.ar.core.CameraIntrinsics as ArIntrinsics
 /**
  * Copies ARCore's raw depth, depth confidence and CPU camera image out of the current
  * frame so they can be processed off the GL thread (ARCore images must be closed quickly).
- * A device whose raw depth keeps failing falls back to ARCore's smoothed depth, so a scan
- * never ends up empty just because one image type is unsupported.
+ * A device whose raw depth keeps failing, or gives too few confident pixels
+ * ([preferSmoothed]), falls back to ARCore's smoothed depth, so a scan never ends up empty
+ * just because one image type is unsupported or sparse.
  */
 class FrameCapture {
     private var lastDepthTimestamp = -1L
     private var rawDepthFailures = 0
 
-    /** True once raw depth has failed repeatedly and smoothed depth is used instead. */
-    val usingSmoothedDepth: Boolean get() = rawDepthFailures >= MAX_RAW_FAILURES
+    /** Use smoothed depth (every pixel filled) instead of raw depth from now on. */
+    @Volatile
+    var preferSmoothed = false
+
+    /** True when the next depth frame comes from smoothed rather than raw depth. */
+    val usingSmoothedDepth: Boolean get() = preferSmoothed || rawDepthFailures >= MAX_RAW_FAILURES
 
     /** Returns null when no new depth image is available for this frame. */
     fun capture(frame: Frame, camera: Camera, cameraToWorld: FloatArray, withColor: Boolean): DepthFrame? {

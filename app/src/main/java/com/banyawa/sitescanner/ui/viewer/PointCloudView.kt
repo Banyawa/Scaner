@@ -193,7 +193,7 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
     }
 
     companion object {
-        private const val POINT_SIZE_PX = 3f
+        private const val POINT_SIZE_PX = 4f
         private val MEASURE_COLOR = floatArrayOf(1f, 0.6f, 0f, 1f)
         private val ENDPOINT_COLOR = floatArrayOf(1f, 1f, 1f, 1f)
         private val DOOR_COLOR = floatArrayOf(0.2f, 0.9f, 0.75f, 1f)
