@@ -104,4 +104,22 @@
     <string name="export_csv">ตารางระยะ CSV</string>
     <string name="export_share_title">แชร์ไฟล์ส่งออก</string>
     <string name="export_failed">ส่งออกไม่สำเร็จ</string>
+
+    <!-- Doors & windows -->
+    <string name="plan_tab_plan">แปลน</string>
+    <string name="plan_tab_openings">ประตู/หน้าต่าง (%1$d)</string>
+    <string name="plan_doors">ประตู</string>
+    <string name="plan_windows">หน้าต่าง</string>
+    <string name="opening_door">ประตู</string>
+    <string name="opening_window">หน้าต่าง</string>
+    <string name="opening_opening">ช่องเปิด</string>
+    <string name="opening_sill">ขอบล่าง %1$s</string>
+    <string name="opening_head">ขอบบน %1$s</string>
+    <string name="opening_from_left">ห่างมุมซ้าย %1$s</string>
+    <string name="opening_verify">ความมั่นใจต่ำ — ควรตรวจสอบหน้างาน</string>
+    <string name="opening_delete">ลบ (ไม่ใช่ช่องเปิด)</string>
+    <string name="openings_note">ขนาดเป็นช่องว่างสุทธิที่เห็นในสแกน (ด้านในวงกบ) วัดความสูงจากพื้น \"ห่างมุมซ้าย\" คือมองจากในห้องหันหน้าเข้าผนัง ควรวัดช่องเปิดจริงยืนยันก่อนสั่งผลิต</string>
+    <string name="openings_restore">กลับไปใช้ผลตรวจจับอัตโนมัติ</string>
+    <string name="openings_empty">ไม่พบประตูหรือหน้าต่าง ให้สแกนผนังแต่ละด้านให้เห็นวงกบ ขอบบน และขอบล่าง โดยยืนห่าง 1–3 เมตร</string>
+    <string name="export_openings_csv">ตารางประตู-หน้าต่าง CSV</string>
 </resources>

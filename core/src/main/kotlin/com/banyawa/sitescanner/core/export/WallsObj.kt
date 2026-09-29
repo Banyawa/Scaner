@@ -1,12 +1,20 @@
 package com.banyawa.sitescanner.core.export
 
 import com.banyawa.sitescanner.core.floorplan.FloorPlan
+import com.banyawa.sitescanner.core.floorplan.Opening
+import com.banyawa.sitescanner.core.floorplan.OpeningTags
+import com.banyawa.sitescanner.core.floorplan.WallSegment
+import com.banyawa.sitescanner.core.geometry.Vec2
 import com.banyawa.sitescanner.core.project.Measurement
 import java.io.Writer
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 /**
- * Wavefront OBJ of the extracted walls extruded floor-to-ceiling, plus AR measurements
- * as polylines. Metres, Y up (the OBJ convention); X/Z match the plan's X / -Y.
+ * Wavefront OBJ of the extracted walls extruded floor-to-ceiling with door and window
+ * openings cut out, plus AR measurements as polylines. Metres, Y up (the OBJ convention);
+ * X/Z match the plan's X / -Y.
  */
 object WallsObj {
     fun write(
@@ -28,14 +36,36 @@ object WallsObj {
             vertex++
         }
 
+        /** Vertical quad on plan segment a→b between heights h0 and h1. Plan (x, y) → OBJ (x, h, -y). */
+        fun quad(a: Vec2, b: Vec2, h0: Float, h1: Float) {
+            if (h1 - h0 < 1e-3f || a.distanceTo(b) < 1e-3f) return
+            v(a.x, h0, -a.y)
+            v(b.x, h0, -b.y)
+            v(b.x, h1, -b.y)
+            v(a.x, h1, -a.y)
+            sb.append("f ${vertex - 3} ${vertex - 2} ${vertex - 1} $vertex\n")
+        }
+
         sb.append("o walls\n")
         for (w in plan.walls) {
-            // Plan (x, y) -> OBJ (x, height, -y)
-            v(w.start.x, 0f, -w.start.y)
-            v(w.end.x, 0f, -w.end.y)
-            v(w.end.x, height, -w.end.y)
-            v(w.start.x, height, -w.start.y)
-            sb.append("f ${vertex - 3} ${vertex - 2} ${vertex - 1} $vertex\n")
+            for ((a, b) in solidParts(w, plan.openings)) quad(a, b, 0f, height)
+        }
+        // Wall above doors / windows and below windows.
+        for (o in plan.openings) {
+            quad(o.start, o.end, 0f, o.bottom)
+            quad(o.start, o.end, o.top, height)
+        }
+
+        if (plan.openings.isNotEmpty()) {
+            val tags = OpeningTags.assign(plan.openings)
+            for (o in plan.openings) {
+                sb.append("o ${tags.getValue(o.id)}_${o.type.name.lowercase()}\n")
+                v(o.start.x, o.bottom, -o.start.y)
+                v(o.end.x, o.bottom, -o.end.y)
+                v(o.end.x, o.top, -o.end.y)
+                v(o.start.x, o.top, -o.start.y)
+                sb.append("l ${vertex - 3} ${vertex - 2} ${vertex - 1} $vertex ${vertex - 3}\n")
+            }
         }
 
         if (measurements.isNotEmpty()) {
@@ -50,5 +80,30 @@ object WallsObj {
         }
         out.append(sb)
         out.flush()
+    }
+
+    /** Pieces of [w] not covered by an opening lying on the same line. */
+    private fun solidParts(w: WallSegment, openings: List<Opening>): List<Pair<Vec2, Vec2>> {
+        val len = w.length
+        if (len <= 0f) return emptyList()
+        val dir = w.direction
+        val normal = dir.perp()
+        val cuts = openings
+            .filter { abs(it.direction cross dir) < 0.05f && abs((it.midpoint - w.start) dot normal) < 0.1f }
+            .map {
+                val a = (it.start - w.start) dot dir
+                val b = (it.end - w.start) dot dir
+                min(a, b) to max(a, b)
+            }
+            .filter { it.second > 0f && it.first < len }
+            .sortedBy { it.first }
+        val parts = ArrayList<Pair<Vec2, Vec2>>()
+        var t = 0f
+        for ((a, b) in cuts) {
+            if (a > t) parts += (w.start + dir * t) to (w.start + dir * a)
+            t = max(t, b)
+        }
+        if (t < len) parts += (w.start + dir * t) to w.end
+        return parts
     }
 }

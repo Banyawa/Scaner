@@ -105,4 +105,22 @@
     <string name="export_csv">Measurements CSV</string>
     <string name="export_share_title">Share export</string>
     <string name="export_failed">Export failed</string>
+
+    <!-- Doors & windows -->
+    <string name="plan_tab_plan">Plan</string>
+    <string name="plan_tab_openings">Doors &amp; windows (%1$d)</string>
+    <string name="plan_doors">Doors</string>
+    <string name="plan_windows">Windows</string>
+    <string name="opening_door">Door</string>
+    <string name="opening_window">Window</string>
+    <string name="opening_opening">Opening</string>
+    <string name="opening_sill">Sill %1$s</string>
+    <string name="opening_head">Head %1$s</string>
+    <string name="opening_from_left">%1$s from left corner</string>
+    <string name="opening_verify">Low confidence — check on site</string>
+    <string name="opening_delete">Delete (not an opening)</string>
+    <string name="openings_note">Sizes are the clear opening seen in the scan (inside frames), measured from the floor. \"From left corner\" is seen from inside the room facing the wall. Verify rough openings on site before fabrication.</string>
+    <string name="openings_restore">Restore automatic detection</string>
+    <string name="openings_empty">No doors or windows found. Scan each wall with its jambs, head and sill in view, standing 1–3 m away.</string>
+    <string name="export_openings_csv">Door/window schedule CSV</string>
 </resources>

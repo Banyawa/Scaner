@@ -41,6 +41,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.banyawa.sitescanner.R
 import com.banyawa.sitescanner.SiteScannerApp
 import com.banyawa.sitescanner.app
+import com.banyawa.sitescanner.core.floorplan.FloorPlan
+import com.banyawa.sitescanner.core.floorplan.Opening
+import com.banyawa.sitescanner.core.floorplan.OpeningType
 import com.banyawa.sitescanner.core.pointcloud.ColorMaps
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.project.ScanInfo
@@ -54,11 +57,16 @@ import kotlinx.coroutines.withContext
 
 sealed interface ViewerState {
     data object Loading : ViewerState
-    class Loaded(val scan: ScanInfo, val cloud: PointCloud, val heightColors: ByteArray) : ViewerState
+    class Loaded(
+        val scan: ScanInfo,
+        val cloud: PointCloud,
+        val heightColors: ByteArray,
+        val openings: OpeningFrames = OpeningFrames.EMPTY,
+    ) : ViewerState
     data object Missing : ViewerState
 }
 
-class ViewerViewModel(projectId: String, scanId: String, app: SiteScannerApp) : ViewModel() {
+class ViewerViewModel(projectId: String, scanId: String, private val app: SiteScannerApp) : ViewModel() {
     private val _state = MutableStateFlow<ViewerState>(ViewerState.Loading)
     val state: StateFlow<ViewerState> = _state.asStateFlow()
 
@@ -73,7 +81,38 @@ class ViewerViewModel(projectId: String, scanId: String, app: SiteScannerApp) : 
             val cloud = app.analysis.cloud(projectId, scan).decimated(MAX_DISPLAY_POINTS)
             val heights = withContext(Dispatchers.Default) { ColorMaps.byHeight(cloud) }
             _state.value = ViewerState.Loaded(scan, cloud, heights)
+
+            // Door / window outlines follow once the (slower) floor-plan analysis is done.
+            val frames = runCatching {
+                val plan = app.analysis.floorPlan(projectId, scan).plan
+                withContext(Dispatchers.Default) { openingFrames(plan) }
+            }.getOrNull() ?: return@launch
+            _state.value = ViewerState.Loaded(scan, cloud, heights, frames)
         }
+    }
+
+    private fun openingFrames(plan: FloorPlan): OpeningFrames {
+        fun outline(list: List<Opening>): FloatArray {
+            val out = FloatArray(list.size * 4 * 6)
+            var k = 0
+            for (o in list) {
+                val corners = listOf(
+                    plan.alignment.toWorld(o.start, o.bottom),
+                    plan.alignment.toWorld(o.end, o.bottom),
+                    plan.alignment.toWorld(o.end, o.top),
+                    plan.alignment.toWorld(o.start, o.top),
+                )
+                for (i in 0 until 4) {
+                    val a = corners[i]
+                    val b = corners[(i + 1) % 4]
+                    out[k++] = a.x; out[k++] = a.y; out[k++] = a.z
+                    out[k++] = b.x; out[k++] = b.y; out[k++] = b.z
+                }
+            }
+            return out
+        }
+        val (windows, doors) = plan.openings.partition { it.type == OpeningType.WINDOW }
+        return OpeningFrames(outline(doors), outline(windows))
     }
 
     companion object {
@@ -131,7 +170,9 @@ fun ViewerScreen(projectId: String, scanId: String, onBack: () -> Unit) {
                 is ViewerState.Loaded -> {
                     AndroidView(
                         factory = { view },
-                        update = { it.setContent(s.cloud, if (heightColors) s.heightColors else s.cloud.rgb, s.scan.measurements) },
+                        update = {
+                            it.setContent(s.cloud, if (heightColors) s.heightColors else s.cloud.rgb, s.scan.measurements, s.openings)
+                        },
                         modifier = Modifier.fillMaxSize(),
                     )
                     Text(

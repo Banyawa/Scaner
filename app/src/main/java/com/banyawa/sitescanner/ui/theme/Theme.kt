@@ -46,4 +46,7 @@ object PlanColors {
     val Wall = Color(0xFF1B2733)
     val Dimension = Color(0xFF0B5CAD)
     val Measurement = Color(0xFFD84315)
+    val Door = Color(0xFF00897B)
+    val Window = Color(0xFF1E6FD9)
+    val WindowFill = Color(0x331E6FD9)
 }

@@ -7,6 +7,7 @@ import androidx.core.content.FileProvider
 import com.banyawa.sitescanner.R
 import com.banyawa.sitescanner.core.export.FloorPlanDxf
 import com.banyawa.sitescanner.core.export.MeasurementCsv
+import com.banyawa.sitescanner.core.export.OpeningCsv
 import com.banyawa.sitescanner.core.export.Ply
 import com.banyawa.sitescanner.core.export.Pts
 import com.banyawa.sitescanner.core.export.WallsObj
@@ -22,6 +23,7 @@ enum class ExportFormat(val extension: String, val mimeType: String, @StringRes 
     PTS("pts", "text/plain", R.string.export_pts),
     OBJ_WALLS("obj", "text/plain", R.string.export_obj),
     CSV_MEASUREMENTS("csv", "text/csv", R.string.export_csv),
+    CSV_OPENINGS("csv", "text/csv", R.string.export_openings_csv),
 }
 
 /**
@@ -43,6 +45,7 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
                 ExportFormat.DXF_PLAN -> "plan"
                 ExportFormat.OBJ_WALLS -> "walls"
                 ExportFormat.CSV_MEASUREMENTS -> "measurements"
+                ExportFormat.CSV_OPENINGS -> "doors_windows"
                 else -> "points"
             }
             val file = File(dir, "${safeName(project.name)}_${safeName(scan.name)}_$suffix.${format.extension}")
@@ -60,6 +63,9 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
                 ExportFormat.OBJ_WALLS -> file.bufferedWriter().use { WallsObj.write(result.plan, it, scan.measurements) }
                 ExportFormat.CSV_MEASUREMENTS -> file.bufferedWriter().use {
                     MeasurementCsv.write(scan.measurements, alignment, it, scan.name)
+                }
+                ExportFormat.CSV_OPENINGS -> file.bufferedWriter().use {
+                    OpeningCsv.write(result.plan.openings, it, scan.name)
                 }
             }
             file

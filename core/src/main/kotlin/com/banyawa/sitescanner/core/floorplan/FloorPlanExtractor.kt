@@ -30,6 +30,8 @@ data class FloorPlanParams(
     /** Wall ends within this distance of another wall's line are extended/trimmed to meet it. */
     val cornerSnap: Float = 0.35f,
     val detectObliqueWalls: Boolean = true,
+    val detectOpenings: Boolean = true,
+    val openings: OpeningParams = OpeningParams(),
 )
 
 /**
@@ -39,7 +41,8 @@ data class FloorPlanParams(
  * 3. find the dominant wall direction (most buildings are rectilinear) and rotate the plan
  *    so those walls are axis-aligned,
  * 4. extract axis-aligned wall runs, then oblique walls with RANSAC,
- * 5. snap wall ends into clean corners.
+ * 5. snap wall ends into clean corners,
+ * 6. find doors and windows in each wall ([OpeningDetector]).
  */
 class FloorPlanExtractor(private val params: FloorPlanParams = FloorPlanParams()) {
 
@@ -69,7 +72,9 @@ class FloorPlanExtractor(private val params: FloorPlanParams = FloorPlanParams()
 
         val walls = extractWalls(aligned)
         val snapped = snapCorners(walls)
-        return FloorPlanResult(FloorPlan(snapped, alignment, ceilingY), aligned)
+        var plan = FloorPlan(snapped, alignment, ceilingY)
+        if (params.detectOpenings) plan = plan.copy(openings = OpeningDetector(params.openings).detect(cloud, plan))
+        return FloorPlanResult(plan, aligned)
     }
 
     private class Grid(val xs: FloatArray, val ys: FloatArray) {
@@ -103,7 +108,7 @@ class FloorPlanExtractor(private val params: FloorPlanParams = FloorPlanParams()
     }
 
     /**
-     * Angle in [0, π/2) that makes the occupied cells line up best with the axes, measured
+     * Angle in (-π/4, π/4] that makes the occupied cells line up best with the axes, measured
      * by how "peaky" the projections onto both axes are (sum of squared histogram bins).
      */
     private fun dominantYaw(grid: Grid): Float {
@@ -161,8 +166,10 @@ class FloorPlanExtractor(private val params: FloorPlanParams = FloorPlanParams()
             }
             deg += 0.05
         }
+        // Walls repeat every 90°: pick the smallest rotation so the plan keeps the scan's heading.
         var result = bestDeg % 90.0
-        if (result < 0) result += 90.0
+        if (result <= -45.0) result += 90.0
+        if (result > 45.0) result -= 90.0
         return Math.toRadians(result).toFloat()
     }
 

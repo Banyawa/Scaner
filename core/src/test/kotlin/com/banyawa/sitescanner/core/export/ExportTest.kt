@@ -2,6 +2,8 @@ package com.banyawa.sitescanner.core.export
 
 import com.banyawa.sitescanner.core.floorplan.FloorPlan
 import com.banyawa.sitescanner.core.floorplan.FloorPlanExtractor
+import com.banyawa.sitescanner.core.floorplan.Opening
+import com.banyawa.sitescanner.core.floorplan.OpeningType
 import com.banyawa.sitescanner.core.floorplan.SiteAlignment
 import com.banyawa.sitescanner.core.floorplan.SyntheticRoom
 import com.banyawa.sitescanner.core.floorplan.WallSegment
@@ -141,6 +143,85 @@ class ExportTest {
         assertEquals(4, lines.count { it.startsWith("f ") })
         assertEquals(1, lines.count { it.startsWith("l ") })
         assertTrue(lines.contains("v 4.0000 2.6500 -3.0000"))
+    }
+
+    /** Square plan with a door on the south wall and a window on the east wall (interior is inside the square). */
+    private fun planWithOpenings(): FloorPlan {
+        val base = squarePlan()
+        // South wall seen from inside faces south: left = east.
+        val door = Opening("op1", OpeningType.DOOR, Vec2(2f, 0f), Vec2(1.1f, 0f), 0f, 2.05f, Vec2(4f, 0f), Vec2(0f, 0f), 0.9f)
+        // East wall seen from inside faces east: left = north.
+        val window = Opening("op2", OpeningType.WINDOW, Vec2(4f, 2.2f), Vec2(4f, 1.0f), 0.9f, 2.0f, Vec2(4f, 3f), Vec2(4f, 0f), 0.6f)
+        return base.copy(
+            walls = listOf(
+                WallSegment(Vec2(0f, 0f), Vec2(1.1f, 0f)),
+                WallSegment(Vec2(2f, 0f), Vec2(4f, 0f)),
+            ) + base.walls.drop(1),
+            openings = listOf(door, window),
+        )
+    }
+
+    @Test
+    fun openingInteriorNormalsPointInside() {
+        val (door, window) = planWithOpenings().openings
+        assertEquals(Vec2(0f, 1f), door.interiorNormal)
+        assertEquals(-1f, window.interiorNormal.x, 1e-6f)
+        assertEquals(1.2f, window.width, 1e-5f)
+        assertEquals(0.8f, window.distanceFromWallStart, 1e-5f)
+    }
+
+    @Test
+    fun dxfDrawsOpeningsAndSchedule() {
+        val text = FloorPlanDxf.build(planWithOpenings()).toString()
+        for (layer in listOf(FloorPlanDxf.LAYER_DOORS, FloorPlanDxf.LAYER_WINDOWS, FloorPlanDxf.LAYER_TAGS, FloorPlanDxf.LAYER_SCHEDULE)) {
+            assertTrue("missing layer $layer", text.contains("\n$layer\n"))
+        }
+        assertTrue(text.contains("\nD1\n"))
+        assertTrue(text.contains("\nW1\n"))
+        assertTrue(text.contains("\n900x2050\n"))
+        assertTrue(text.contains("\n1200x1100 SILL 900\n"))
+        assertTrue(text.contains("DOOR / WINDOW SCHEDULE"))
+        assertTrue("low confidence window flagged", text.contains("\nVERIFY\n"))
+        File("build/test-output").mkdirs()
+        File("build/test-output/openings.dxf").writeText(text)
+    }
+
+    @Test
+    fun dxfFromDetectedOpenings() {
+        val holes = listOf(
+            SyntheticRoom.Opening(edge = 0, from = 1.0f, to = 1.9f, topM = 2.05f),
+            SyntheticRoom.Opening(edge = 1, from = 0.8f, to = 2.0f, bottomM = 0.9f, topM = 2.0f),
+        )
+        val result = FloorPlanExtractor().extract(SyntheticRoom.rectangle(4f, 3f, yawDeg = 12f, openings = holes))
+        assertEquals(2, result.plan.openings.size)
+        val text = FloorPlanDxf.build(result.plan, result.slice).toString()
+        File("build/test-output").mkdirs()
+        File("build/test-output/detected.dxf").writeText(text)
+        val obj = StringWriter().also { WallsObj.write(result.plan, it) }.toString()
+        File("build/test-output/detected.obj").writeText(obj)
+    }
+
+    @Test
+    fun objCutsOpenings() {
+        val out = StringWriter()
+        WallsObj.write(planWithOpenings(), out)
+        val lines = out.toString().lines()
+        // South: 2 wall pieces; east: 2 pieces around the window; north, west: 1 each.
+        // Door: header only (no sill). Window: sill + header.
+        assertEquals(6 + 1 + 2, lines.count { it.startsWith("f ") })
+        assertTrue(lines.contains("o D1_door"))
+        assertTrue(lines.contains("o W1_window"))
+        assertEquals(2, lines.count { it.startsWith("l ") })
+    }
+
+    @Test
+    fun openingCsvRows() {
+        val out = StringWriter()
+        OpeningCsv.write(planWithOpenings().openings, out, "Scan 1")
+        val lines = out.toString().removePrefix("\uFEFF").trim().lines()
+        assertEquals(3, lines.size)
+        assertEquals("Scan 1,D1,DOOR,900,2050,0,2050,2000,1100,4000,0.90", lines[1])
+        assertEquals("Scan 1,W1,WINDOW,1200,1100,900,2000,800,1000,3000,0.60", lines[2])
     }
 
     @Test

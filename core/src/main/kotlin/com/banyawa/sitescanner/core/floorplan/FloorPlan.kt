@@ -40,6 +40,14 @@ data class SiteAlignment(val yawRad: Float = 0f, val floorY: Float = 0f) {
         out[offset + 2] = y - floorY
     }
 
+    /** Inverse of [toSite]: plan point at [height] above the floor back to ARCore world. */
+    fun toWorld(plan: Vec2, height: Float): Vec3 {
+        // Transpose of toPlan's rotation matrix.
+        val u = plan.x * c + plan.y * s
+        val v = -plan.x * s + plan.y * c
+        return Vec3(u, height + floorY, -v)
+    }
+
     companion object {
         val IDENTITY = SiteAlignment()
     }
@@ -52,12 +60,13 @@ data class WallSegment(val start: Vec2, val end: Vec2, val support: Int = 0) {
     val midpoint: Vec2 get() = Vec2.lerp(start, end, 0.5f)
 }
 
-/** Walls are in plan coordinates (metres) of [alignment]. */
+/** Walls and openings are in plan coordinates (metres) of [alignment]. */
 @Serializable
 data class FloorPlan(
     val walls: List<WallSegment>,
     val alignment: SiteAlignment,
     val ceilingY: Float? = null,
+    val openings: List<Opening> = emptyList(),
 ) {
     val floorY: Float get() = alignment.floorY
 

@@ -51,14 +51,16 @@ class PointCloudView(context: Context) : GLSurfaceView(context) {
     private var shownCloud: PointCloud? = null
     private var shownColors: ByteArray? = null
     private var shownMeasurements: List<Measurement>? = null
+    private var shownOpenings: OpeningFrames? = null
 
-    fun setContent(cloud: PointCloud, colors: ByteArray, measurements: List<Measurement>) {
-        if (cloud === shownCloud && colors === shownColors && measurements == shownMeasurements) return
+    fun setContent(cloud: PointCloud, colors: ByteArray, measurements: List<Measurement>, openings: OpeningFrames) {
+        if (cloud === shownCloud && colors === shownColors && measurements == shownMeasurements && openings === shownOpenings) return
         val refit = cloud !== shownCloud
         shownCloud = cloud
         shownColors = colors
         shownMeasurements = measurements
-        queueEvent { renderer.setContent(cloud, colors, measurements, refit) }
+        shownOpenings = openings
+        queueEvent { renderer.setContent(cloud, colors, measurements, openings, refit) }
         requestRender()
     }
 
@@ -121,6 +123,13 @@ class PointCloudView(context: Context) : GLSurfaceView(context) {
     }
 }
 
+/** Door and window outlines as GL_LINES vertex pairs in ARCore world coordinates. */
+class OpeningFrames(val doors: FloatArray, val windows: FloatArray) {
+    companion object {
+        val EMPTY = OpeningFrames(FloatArray(0), FloatArray(0))
+    }
+}
+
 private class ViewerRenderer : GLSurfaceView.Renderer {
     val camera = OrbitCamera()
     private val points = PointRenderer()
@@ -129,13 +138,15 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
     private var cloud: PointCloud? = null
     private var colors: ByteArray? = null
     private var measurementLines = FloatArray(0)
+    private var openings = OpeningFrames.EMPTY
     private var uploaded = false
     private var width = 1
     private var height = 1
 
-    fun setContent(cloud: PointCloud, colors: ByteArray, measurements: List<Measurement>, refit: Boolean) {
+    fun setContent(cloud: PointCloud, colors: ByteArray, measurements: List<Measurement>, openings: OpeningFrames, refit: Boolean) {
         this.cloud = cloud
         this.colors = colors
+        this.openings = openings
         measurementLines = FloatArray(measurements.size * 6).also { arr ->
             measurements.forEachIndexed { i, m ->
                 arr[i * 6] = m.start.x; arr[i * 6 + 1] = m.start.y; arr[i * 6 + 2] = m.start.z
@@ -173,6 +184,8 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
         }
         val viewProj = camera.viewProjection(width.toFloat() / height.coerceAtLeast(1))
         points.draw(viewProj, POINT_SIZE_PX)
+        lines.draw(viewProj, openings.doors, DOOR_COLOR, GLES20.GL_LINES, lineWidth = 4f)
+        lines.draw(viewProj, openings.windows, WINDOW_COLOR, GLES20.GL_LINES, lineWidth = 4f)
         if (measurementLines.isNotEmpty()) {
             lines.draw(viewProj, measurementLines, MEASURE_COLOR, GLES20.GL_LINES, lineWidth = 5f)
             lines.draw(viewProj, measurementLines, ENDPOINT_COLOR, GLES20.GL_POINTS, pointSize = 12f)
@@ -183,5 +196,7 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
         private const val POINT_SIZE_PX = 3f
         private val MEASURE_COLOR = floatArrayOf(1f, 0.6f, 0f, 1f)
         private val ENDPOINT_COLOR = floatArrayOf(1f, 1f, 1f, 1f)
+        private val DOOR_COLOR = floatArrayOf(0.2f, 0.9f, 0.75f, 1f)
+        private val WINDOW_COLOR = floatArrayOf(0.35f, 0.6f, 1f, 1f)
     }
 }

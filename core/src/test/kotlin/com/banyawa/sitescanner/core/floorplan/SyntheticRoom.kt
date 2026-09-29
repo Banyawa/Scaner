@@ -8,12 +8,17 @@ import kotlin.math.sin
 
 /** Generates ARCore-frame point clouds of simple rooms for tests. */
 object SyntheticRoom {
-    /** A hole in the wall from [from] to [to] metres along edge [edge], below [topM]. */
-    data class Opening(val edge: Int, val from: Float, val to: Float, val topM: Float = 2.0f)
+    /** A hole in wall [edge] from [from] to [to] metres along the edge, between [bottomM] and [topM]. */
+    data class Opening(val edge: Int, val from: Float, val to: Float, val topM: Float = 2.0f, val bottomM: Float = 0f)
+
+    /** Extra vertical surface from [a] to [b] (local plan coordinates), between heights [h0] and [h1]. */
+    data class Panel(val a: Vec2, val b: Vec2, val h0: Float, val h1: Float)
 
     /**
      * @param outline room corners in local plan metres, counter-clockwise.
      * @param yawDeg rotation of the room in the plan.
+     * @param wallMaxHeight walls are only "scanned" up to this height (unscanned band above).
+     * @param dropout fraction of points randomly missing.
      */
     fun polygon(
         outline: List<Vec2>,
@@ -22,6 +27,9 @@ object SyntheticRoom {
         floorY: Float = -1.4f,
         offset: Vec2 = Vec2(0.7f, -2.3f),
         openings: List<Opening> = emptyList(),
+        panels: List<Panel> = emptyList(),
+        wallMaxHeight: Float = height,
+        dropout: Float = 0f,
         spacing: Float = 0.01f,
         noise: Float = 0.003f,
         seed: Long = 7,
@@ -33,6 +41,7 @@ object SyntheticRoom {
         val s = sin(yaw)
 
         fun emit(local: Vec2, h: Float) {
+            if (dropout > 0f && rnd.nextFloat() < dropout) return
             val u = local.x * c - local.y * s + offset.x + rnd.nextGaussian().toFloat() * noise
             val v = local.x * s + local.y * c + offset.y + rnd.nextGaussian().toFloat() * noise
             xyz += u
@@ -50,9 +59,22 @@ object SyntheticRoom {
                 val t = k * spacing
                 val p = Vec2.lerp(a, b, t / len)
                 var h = 0f
-                while (h <= height) {
-                    val inOpening = openings.any { it.edge == i && t >= it.from && t <= it.to && h < it.topM }
+                while (h <= minOf(height, wallMaxHeight)) {
+                    val inOpening = openings.any { it.edge == i && t >= it.from && t <= it.to && h >= it.bottomM && h < it.topM }
                     if (!inOpening) emit(p, h)
+                    h += spacing * 2
+                }
+            }
+        }
+
+        for (panel in panels) {
+            val len = panel.a.distanceTo(panel.b)
+            val steps = (len / spacing).toInt()
+            for (k in 0..steps) {
+                val p = Vec2.lerp(panel.a, panel.b, k * spacing / len)
+                var h = panel.h0
+                while (h <= panel.h1) {
+                    emit(p, h)
                     h += spacing * 2
                 }
             }
@@ -80,13 +102,24 @@ object SyntheticRoom {
         return PointCloud(arr, ByteArray(arr.size) { 0x80.toByte() })
     }
 
-    fun rectangle(width: Float, depth: Float, yawDeg: Float = 0f, openings: List<Opening> = emptyList(), height: Float = 2.6f) =
-        polygon(
-            listOf(Vec2(0f, 0f), Vec2(width, 0f), Vec2(width, depth), Vec2(0f, depth)),
-            height = height,
-            yawDeg = yawDeg,
-            openings = openings,
-        )
+    fun rectangle(
+        width: Float,
+        depth: Float,
+        yawDeg: Float = 0f,
+        openings: List<Opening> = emptyList(),
+        height: Float = 2.6f,
+        panels: List<Panel> = emptyList(),
+        wallMaxHeight: Float = height,
+        dropout: Float = 0f,
+    ) = polygon(
+        listOf(Vec2(0f, 0f), Vec2(width, 0f), Vec2(width, depth), Vec2(0f, depth)),
+        height = height,
+        yawDeg = yawDeg,
+        openings = openings,
+        panels = panels,
+        wallMaxHeight = wallMaxHeight,
+        dropout = dropout,
+    )
 
     private fun inside(p: Vec2, poly: List<Vec2>): Boolean {
         var inside = false

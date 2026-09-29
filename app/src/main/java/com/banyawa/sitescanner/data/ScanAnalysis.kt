@@ -34,7 +34,15 @@ class ScanAnalysis(private val repository: ProjectRepository) {
         cachedCloud!!
     }
 
+    /** Floor plan with the user's door / window edits applied. */
     suspend fun floorPlan(projectId: String, scan: ScanInfo): FloorPlanResult {
+        val raw = detectedFloorPlan(projectId, scan)
+        val edits = scan.openingEdits ?: return raw
+        return FloorPlanResult(edits.applyTo(raw.plan), raw.slice)
+    }
+
+    /** Floor plan exactly as detected from the point cloud. */
+    suspend fun detectedFloorPlan(projectId: String, scan: ScanInfo): FloorPlanResult {
         val cloud = cloud(projectId, scan)
         val key = key(projectId, scan)
         mutex.withLock {

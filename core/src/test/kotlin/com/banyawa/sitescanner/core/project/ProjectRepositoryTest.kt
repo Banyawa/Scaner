@@ -1,5 +1,10 @@
 package com.banyawa.sitescanner.core.project
 
+import com.banyawa.sitescanner.core.floorplan.Opening
+import com.banyawa.sitescanner.core.floorplan.OpeningEdits
+import com.banyawa.sitescanner.core.floorplan.OpeningType
+import com.banyawa.sitescanner.core.floorplan.SiteAlignment
+import com.banyawa.sitescanner.core.geometry.Vec2
 import com.banyawa.sitescanner.core.geometry.Vec3
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -54,6 +59,22 @@ class ProjectRepositoryTest {
 
         assertTrue(repo.delete(p.id))
         assertNull(repo.get(p.id))
+    }
+
+    @Test
+    fun openingEditsSurviveReload() {
+        val repo = repo()
+        val p = repo.create("P")
+        val alignment = SiteAlignment(yawRad = 0.4f, floorY = -1.3f)
+        val window = Opening("op1", OpeningType.WINDOW, Vec2(1f, 0f), Vec2(0f, 0f), 0.9f, 2f, Vec2(3f, 0f), Vec2(-1f, 0f), 0.8f)
+        val scan = repo.newScan("S").copy(openingEdits = OpeningEdits(alignment, listOf(window)))
+        repo.upsertScan(p.id, scan)
+
+        val loaded = ProjectRepository(tmp.root).get(p.id)!!.scans.single().openingEdits!!
+        assertEquals(listOf(window), loaded.openings)
+        // Transient rotation terms are rebuilt after deserialisation.
+        assertEquals(alignment.toPlan(1f, 2f), loaded.alignment.toPlan(1f, 2f))
+        assertNull(repo.newScan("T").openingEdits)
     }
 
     @Test

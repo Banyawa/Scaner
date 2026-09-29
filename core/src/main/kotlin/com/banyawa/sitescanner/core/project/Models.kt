@@ -1,5 +1,6 @@
 package com.banyawa.sitescanner.core.project
 
+import com.banyawa.sitescanner.core.floorplan.OpeningEdits
 import com.banyawa.sitescanner.core.geometry.Vec3
 import kotlinx.serialization.Serializable
 
@@ -39,6 +40,8 @@ data class ScanInfo(
     val captureMode: CaptureMode = CaptureMode.RAW_DEPTH,
     val durationSec: Int = 0,
     val measurements: List<Measurement> = emptyList(),
+    /** Doors / windows as reviewed by the user; null = use automatic detection. */
+    val openingEdits: OpeningEdits? = null,
 )
 
 @Serializable
