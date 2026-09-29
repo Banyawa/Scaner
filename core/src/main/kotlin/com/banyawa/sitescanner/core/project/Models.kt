@@ -45,6 +45,8 @@ data class ScanInfo(
     /** Colour surface mesh of the scan (PLY in the project folder), if any. */
     val meshFile: String? = null,
     val meshTriangles: Int = 0,
+    /** Photo texture of the mesh (JPEG atlas in the project folder); the PLY then carries texture coordinates. */
+    val meshAtlas: String? = null,
     /** The recorded walk-through (folder in the project folder) the model is generated from, if kept. */
     val captureDir: String? = null,
     val captureFrames: Int = 0,

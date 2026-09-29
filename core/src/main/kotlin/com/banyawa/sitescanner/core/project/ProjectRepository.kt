@@ -30,6 +30,11 @@ class ProjectRepository(private val rootDir: File, private val clock: () -> Long
     /** Where [scan]'s surface mesh is (or goes, see [meshFileName]); null without a mesh. */
     fun meshFile(projectId: String, scan: ScanInfo): File? = scan.meshFile?.let { File(projectDir(projectId), it) }
 
+    /** The mesh's photo texture, when it has one. */
+    fun atlasFile(projectId: String, scan: ScanInfo): File? = scan.meshAtlas?.let { File(projectDir(projectId), it) }
+
+    fun atlasFileName(scan: ScanInfo) = "scan_${scan.id}_atlas.jpg"
+
     /** The recorded walk-through of [scan]; null when none was kept. */
     fun captureDir(projectId: String, scan: ScanInfo): File? = scan.captureDir?.let { File(projectDir(projectId), it) }
 
@@ -106,6 +111,7 @@ class ProjectRepository(private val rootDir: File, private val clock: () -> Long
         val scan = project.scan(scanId) ?: return project
         scanFile(projectId, scan).delete()
         meshFile(projectId, scan)?.delete()
+        atlasFile(projectId, scan)?.delete()
         captureDir(projectId, scan)?.deleteRecursively()
         return update(project.copy(scans = project.scans.filterNot { it.id == scanId }))
     }

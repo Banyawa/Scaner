@@ -32,29 +32,35 @@ object MeshFrames {
     }
 }
 
+/** A mesh read from PLY with its texture coordinates, when the file had them. */
+class MeshPlyData(val mesh: TriangleMesh, val uv: FloatArray?)
+
 /**
- * Binary PLY meshes: vertices with x, y, z float and red, green, blue uchar, faces as
- * uchar-counted int index lists. Used to store scan meshes and to export them (MeshLab,
- * CloudCompare, Blender).
+ * Binary PLY meshes: vertices with x, y, z float, red, green, blue uchar and, for textured
+ * meshes, s, t float (the texture coordinates, origin top left); faces as uchar-counted
+ * int index lists. Used to store scan meshes and to export them (MeshLab, CloudCompare,
+ * Blender).
  */
 object MeshPly {
-    fun write(mesh: TriangleMesh, file: File, comment: String = "frame arcore Y-up metres") {
+    fun write(mesh: TriangleMesh, file: File, comment: String = "frame arcore Y-up metres", uv: FloatArray? = null) {
         file.parentFile?.mkdirs()
         val tmp = File(file.path + ".tmp")
-        tmp.outputStream().use { write(mesh, it, comment) }
+        tmp.outputStream().use { write(mesh, it, comment, uv) }
         if (!tmp.renameTo(file)) {
             file.delete()
             if (!tmp.renameTo(file)) throw IOException("Could not write ${file.path}")
         }
     }
 
-    fun write(mesh: TriangleMesh, out: OutputStream, comment: String = "frame arcore Y-up metres") {
+    fun write(mesh: TriangleMesh, out: OutputStream, comment: String = "frame arcore Y-up metres", uv: FloatArray? = null) {
+        require(uv == null || uv.size == mesh.vertexCount * 2) { "two texture coordinates per vertex" }
         val bos = BufferedOutputStream(out, 1 shl 16)
         val header = buildString {
             append("ply\nformat binary_little_endian 1.0\ncomment Site Scanner\ncomment $comment\n")
             append("element vertex ${mesh.vertexCount}\n")
             append("property float x\nproperty float y\nproperty float z\n")
             append("property uchar red\nproperty uchar green\nproperty uchar blue\n")
+            if (uv != null) append("property float s\nproperty float t\n")
             append("element face ${mesh.triangleCount}\n")
             append("property list uchar int vertex_indices\n")
             append("end_header\n")
@@ -68,9 +74,10 @@ object MeshPly {
             }
         }
         for (v in 0 until mesh.vertexCount) {
-            room(15)
+            room(23)
             buf.putFloat(mesh.positions[v * 3]).putFloat(mesh.positions[v * 3 + 1]).putFloat(mesh.positions[v * 3 + 2])
             buf.put(mesh.colors[v * 3]).put(mesh.colors[v * 3 + 1]).put(mesh.colors[v * 3 + 2])
+            if (uv != null) buf.putFloat(uv[v * 2]).putFloat(uv[v * 2 + 1])
         }
         for (t in 0 until mesh.triangleCount) {
             room(13)
@@ -82,11 +89,17 @@ object MeshPly {
 
     fun read(file: File): TriangleMesh = file.inputStream().use { read(it) }
 
-    /** Reads meshes as [write] writes them. */
-    fun read(input: InputStream): TriangleMesh {
+    /** Reads meshes as [write] writes them; texture coordinates, if any, are dropped. */
+    fun read(input: InputStream): TriangleMesh = readTextured(input).mesh
+
+    fun readTextured(file: File): MeshPlyData = file.inputStream().use { readTextured(it) }
+
+    /** Reads meshes as [write] writes them, with their texture coordinates when present. */
+    fun readTextured(input: InputStream): MeshPlyData {
         val stream = DataInputStream(BufferedInputStream(input, 1 shl 16))
         var vertices = -1
         var faces = -1
+        var textured = false
         while (true) {
             val line = readLine(stream)
             when {
@@ -94,21 +107,28 @@ object MeshPly {
                 line.startsWith("format ") && line != "format binary_little_endian 1.0" -> throw IOException("Unsupported mesh PLY: $line")
                 line.startsWith("element vertex ") -> vertices = line.substringAfterLast(' ').toInt()
                 line.startsWith("element face ") -> faces = line.substringAfterLast(' ').toInt()
+                line == "property float s" -> textured = true
             }
         }
         if (vertices < 0 || faces < 0) throw IOException("PLY has no mesh")
         val positions = FloatArray(vertices * 3)
         val colors = ByteArray(vertices * 3)
-        val record = ByteArray(15)
+        val uv = if (textured) FloatArray(vertices * 2) else null
+        val stride = if (textured) 23 else 15
+        val record = ByteArray(23)
         val rb = ByteBuffer.wrap(record).order(ByteOrder.LITTLE_ENDIAN)
         for (v in 0 until vertices) {
-            stream.readFully(record, 0, 15)
+            stream.readFully(record, 0, stride)
             positions[v * 3] = rb.getFloat(0)
             positions[v * 3 + 1] = rb.getFloat(4)
             positions[v * 3 + 2] = rb.getFloat(8)
             colors[v * 3] = record[12]
             colors[v * 3 + 1] = record[13]
             colors[v * 3 + 2] = record[14]
+            if (uv != null) {
+                uv[v * 2] = rb.getFloat(15)
+                uv[v * 2 + 1] = rb.getFloat(19)
+            }
         }
         val indices = IntArray(faces * 3)
         for (t in 0 until faces) {
@@ -118,7 +138,7 @@ object MeshPly {
             indices[t * 3 + 1] = rb.getInt(5)
             indices[t * 3 + 2] = rb.getInt(9)
         }
-        return TriangleMesh(positions, colors, indices)
+        return MeshPlyData(TriangleMesh(positions, colors, indices), uv)
     }
 
     private fun readLine(stream: InputStream): String {

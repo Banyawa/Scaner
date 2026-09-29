@@ -49,8 +49,12 @@ class ProjectRepositoryTest {
         assertEquals(1f, repo.get(p.id)!!.scans[0].measurements[0].lengthM, 1e-6f)
 
         assertNull(repo.meshFile(p.id, scan))
-        val meshed = scan.copy(name = "Renamed", meshFile = repo.meshFileName(scan), meshTriangles = 10, captureDir = repo.captureDirName(scan), captureFrames = 3)
+        val meshed = scan.copy(
+            name = "Renamed", meshFile = repo.meshFileName(scan), meshTriangles = 10, meshAtlas = repo.atlasFileName(scan),
+            captureDir = repo.captureDirName(scan), captureFrames = 3,
+        )
         repo.meshFile(p.id, meshed)!!.writeText("ply")
+        val atlas = repo.atlasFile(p.id, meshed)!!.apply { writeText("jpg") }
         val capture = repo.captureDir(p.id, meshed)!!.apply { mkdirs() }
         File(capture, "frames.jsonl").writeText("{}")
         repo.upsertScan(p.id, meshed)
@@ -64,6 +68,7 @@ class ProjectRepositoryTest {
         repo.deleteScan(p.id, scan.id)
         assertFalse(file.exists())
         assertFalse(mesh.exists())
+        assertFalse(atlas.exists())
         assertFalse(capture.exists())
         assertTrue(repo.get(p.id)!!.scans.isEmpty())
 

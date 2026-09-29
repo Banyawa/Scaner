@@ -37,6 +37,21 @@ class MeshFilesTest {
     }
 
     @Test
+    fun plyKeepsTextureCoordinates() {
+        val uv = floatArrayOf(0f, 0f, 1f, 0f, 1f, 1f, 0f, 1f)
+        val out = ByteArrayOutputStream()
+        MeshPly.write(square, out, uv = uv)
+        val back = MeshPly.readTextured(ByteArrayInputStream(out.toByteArray()))
+        assertArrayEquals(uv, back.uv, 0f)
+        assertArrayEquals(square.positions, back.mesh.positions, 0f)
+        assertArrayEquals(square.indices, back.mesh.indices)
+        // Plain readers still get the mesh, and untextured files have no coordinates.
+        assertArrayEquals(square.colors, MeshPly.read(ByteArrayInputStream(out.toByteArray())).colors)
+        val plain = ByteArrayOutputStream().also { MeshPly.write(square, it) }
+        assertEquals(null, MeshPly.readTextured(ByteArrayInputStream(plain.toByteArray())).uv)
+    }
+
+    @Test
     fun glbIsWellFormed() {
         val out = ByteArrayOutputStream()
         Glb.write(square, out)
