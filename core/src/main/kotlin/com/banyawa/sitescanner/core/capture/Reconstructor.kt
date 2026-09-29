@@ -65,6 +65,10 @@ data class ReconstructionOptions(
     val estimateDepth: Boolean = true,
     /** Frames given estimated depth at most: stereo costs about half a second a frame on a phone. */
     val maxStereoFrames: Int = 150,
+    /** Lay the floor and ceiling planes the tracker found over the room where depth gave nothing. */
+    val fillLevels: Boolean = true,
+    /** Taubin smoothing passes over the surface; 0 keeps the raw fusion. */
+    val smoothingPasses: Int = 6,
 )
 
 class ReconstructionResult(
@@ -130,7 +134,11 @@ class Reconstructor(
         val cloud = consistentPoints(weighted, surface)
 
         progress?.onProgress("mesh", 0, 1)
-        val mesh = if (isCancelled()) TriangleMesh.EMPTY else surface.extractMesh().withoutSmallParts()
+        if (options.fillLevels && !isCancelled()) {
+            capture.manifest.floorY?.let { surface.fillLevel(it, facingUp = true) }
+            capture.manifest.ceilingY?.let { surface.fillLevel(it, facingUp = false) }
+        }
+        val mesh = if (isCancelled()) TriangleMesh.EMPTY else surface.extractMesh().withoutSmallParts().smoothed(options.smoothingPasses)
         progress?.onProgress("mesh", 1, 1)
         return ReconstructionResult(cloud, mesh, indices.size, depthFrames, capture.manifest.floorY)
     }

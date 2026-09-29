@@ -57,7 +57,12 @@ sealed interface ScanAction {
 }
 
 /** [correctedPoses]: keyframe poses (by frame timestamp) read back through anchors at the end of the scan. */
-data class SessionResult(val measurements: List<Measurement>, val floorY: Float?, val correctedPoses: Map<Long, FloatArray> = emptyMap())
+data class SessionResult(
+    val measurements: List<Measurement>,
+    val floorY: Float?,
+    val correctedPoses: Map<Long, FloatArray> = emptyMap(),
+    val ceilingY: Float? = null,
+)
 
 class PreviewSnapshot(val version: Int, val cloud: PointCloud)
 
@@ -150,6 +155,11 @@ class ScanController {
         if (frame != null && color != null && k != null && recordKeyframes.shouldCapture(frame.cameraToWorld, SystemClock.elapsedRealtime())) {
             recorder?.add(depth.timestampNs, frame.cameraToWorld, color to k, depth.points, depth.surface, depth.raw)
         }
+        // The live overlay is only feedback: a full overlay or a busy worker never holds up recording.
+        if (integrator.isFull) {
+            depthFrames++
+            return
+        }
         submit {
             val before = integrator.voxelCount
             depth.points?.let { points ->
@@ -170,7 +180,7 @@ class ScanController {
 
     val recordedFrames: Int get() = recorder?.frameCount ?: 0
 
-    fun submitFeaturePoints(xyzc: FloatArray, count: Int) = submit {
+    fun submitFeaturePoints(xyzc: FloatArray, count: Int) = if (integrator.isFull) Unit else submit {
         val before = integrator.voxelCount
         integrator.integrateWorldPoints(xyzc, count)
         lastAccepted = integrator.voxelCount - before
@@ -229,8 +239,8 @@ class ScanController {
     companion object {
         private const val TAG = "ScanController"
 
-        /** 1 cm voxels: fine enough for shop-drawing detail, coarse enough for phone memory. */
-        const val VOXEL_SIZE_M = 0.01f
+        /** The live overlay is coverage feedback: 2 cm voxels keep a whole floor of rooms in memory. */
+        const val VOXEL_SIZE_M = 0.02f
         const val MAX_VOXELS = 3_000_000
 
         /** Raw depth confidence (0..255) below which a pixel is not used at all. */

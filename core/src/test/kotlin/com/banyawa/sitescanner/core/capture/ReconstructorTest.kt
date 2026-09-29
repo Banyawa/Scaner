@@ -58,6 +58,9 @@ class ReconstructorTest {
         return best to ((ch(16) shl 16) or (ch(8) shl 8) or ch(0))
     }
 
+    /** Depth of the floor is left out when [glossyFloor]: polished tiles give the depth sensor nothing. */
+    private var glossyFloor = false
+
     private fun render(pose: FloatArray, k: CameraIntrinsics, depthOut: ShortArray?, colorOut: IntArray?, textured: Boolean = false) {
         val eye = Vec3(pose[12], pose[13], pose[14])
         for (v in 0 until k.height) for (u in 0 until k.width) {
@@ -67,7 +70,7 @@ class ReconstructorTest {
             val len = dir.length()
             val (t, rgb) = hit(eye, dir * (1f / len), textured)
             val i = v * k.width + u
-            if (depthOut != null) {
+            if (depthOut != null && !(glossyFloor && rgb == 0x808080)) {
                 val mm = (t / len * 1000f).toInt()
                 if (mm in 1..65000) depthOut[i] = mm.toShort()
             }
@@ -131,6 +134,21 @@ class ReconstructorTest {
         assertTrue("red walls: $wallRed of $walls", wallRed > walls * 0.9)
         assertTrue("grey floor: $floorGrey of $floors", floors > 0 && floorGrey > floors * 0.9)
         assertEquals(0f, result.floorY)
+    }
+
+    @Test
+    fun glossyFloorIsFilledFromTheTrackerPlane() {
+        glossyFloor = true
+        val capture = record(80, withDepth = true)
+        glossyFloor = false
+        fun floorVertices(m: com.banyawa.sitescanner.core.mesh.TriangleMesh) =
+            (0 until m.vertexCount).count { v -> kotlin.math.abs(m.positions[v * 3 + 1]) < 0.03f && m.positions[v * 3] in 0.5f..3.5f && m.positions[v * 3 + 2] in -4.5f..-0.5f }
+        val without = Reconstructor(decoder, ReconstructionOptions(fillLevels = false)).reconstruct(capture)
+        val with = Reconstructor(decoder).reconstruct(capture)
+        assertTrue("no floor without the fill: ${floorVertices(without.mesh)}", floorVertices(without.mesh) < 500)
+        assertTrue("floor filled: ${floorVertices(with.mesh)}", floorVertices(with.mesh) > 5_000)
+        // The walls are still there and the model is one piece.
+        assertTrue(with.mesh.triangleCount > without.mesh.triangleCount)
     }
 
     @Test

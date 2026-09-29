@@ -128,6 +128,72 @@ class TriangleMesh(val positions: FloatArray, val colors: ByteArray, val indices
         return TriangleMesh(newPositions, newColors, newIndices)
     }
 
+    /**
+     * Taubin smoothing: [passes] rounds of a shrinking Laplacian step ([lambda]) each followed
+     * by an inflating one ([mu]), which irons out depth noise without shrinking the shape the
+     * way plain Laplacian smoothing does. Triangles, colours and lone vertices stay as they are.
+     */
+    fun smoothed(passes: Int = 6, lambda: Float = 0.5f, mu: Float = -0.53f): TriangleMesh {
+        if (passes <= 0 || isEmpty()) return this
+        // Neighbour lists in CSR form: every triangle edge, both ways, duplicates removed.
+        val count = IntArray(vertexCount)
+        for (t in 0 until triangleCount) for (j in 0 until 3) {
+            count[indices[t * 3 + j]] += 2
+        }
+        val start = IntArray(vertexCount + 1)
+        for (v in 0 until vertexCount) start[v + 1] = start[v] + count[v]
+        val fill = start.copyOf()
+        val neighbours = IntArray(start[vertexCount])
+        for (t in 0 until triangleCount) {
+            val a = indices[t * 3]
+            val b = indices[t * 3 + 1]
+            val c = indices[t * 3 + 2]
+            neighbours[fill[a]++] = b; neighbours[fill[a]++] = c
+            neighbours[fill[b]++] = a; neighbours[fill[b]++] = c
+            neighbours[fill[c]++] = a; neighbours[fill[c]++] = b
+        }
+        val degree = IntArray(vertexCount)
+        for (v in 0 until vertexCount) {
+            java.util.Arrays.sort(neighbours, start[v], start[v + 1])
+            var n = 0
+            var last = -1
+            for (k in start[v] until start[v + 1]) {
+                if (neighbours[k] == last) continue
+                last = neighbours[k]
+                neighbours[start[v] + n++] = last
+            }
+            degree[v] = n
+        }
+
+        var src = positions.copyOf()
+        var dst = FloatArray(positions.size)
+        fun step(factor: Float) {
+            for (v in 0 until vertexCount) {
+                val n = degree[v]
+                if (n == 0) {
+                    dst[v * 3] = src[v * 3]; dst[v * 3 + 1] = src[v * 3 + 1]; dst[v * 3 + 2] = src[v * 3 + 2]
+                    continue
+                }
+                var sx = 0f
+                var sy = 0f
+                var sz = 0f
+                for (k in start[v] until start[v] + n) {
+                    val u = neighbours[k] * 3
+                    sx += src[u]; sy += src[u + 1]; sz += src[u + 2]
+                }
+                dst[v * 3] = src[v * 3] + factor * (sx / n - src[v * 3])
+                dst[v * 3 + 1] = src[v * 3 + 1] + factor * (sy / n - src[v * 3 + 1])
+                dst[v * 3 + 2] = src[v * 3 + 2] + factor * (sz / n - src[v * 3 + 2])
+            }
+            val swap = src; src = dst; dst = swap
+        }
+        repeat(passes) {
+            step(lambda)
+            step(mu)
+        }
+        return TriangleMesh(src, colors, indices)
+    }
+
     /** The same mesh with every vertex moved by [transform], which writes x, y, z into `out`. */
     fun mapPositions(transform: (x: Float, y: Float, z: Float, out: FloatArray, offset: Int) -> Unit): TriangleMesh {
         val out = FloatArray(positions.size)

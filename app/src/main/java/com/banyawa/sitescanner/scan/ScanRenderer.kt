@@ -169,7 +169,6 @@ class ScanRenderer(
             collectDepth(frame, camera)
             return
         }
-        if (controller.isBusy || controller.integrator.isFull) return
         camera.pose.toMatrix(pose, 0)
         // A keyframe that got no depth is retried on the next frame rather than after moving on.
         if (!retryKeyframe && !keyframes.shouldCapture(pose, now)) return
@@ -362,20 +361,21 @@ class ScanRenderer(
                 createdAt = it.createdAt,
             )
         }
-        return SessionResult(list, detectFloorY(session), correctedPoses())
+        val (floorY, ceilingY) = detectLevels(session)
+        return SessionResult(list, floorY, correctedPoses(), ceilingY)
     }
 
-    /** Height of the lowest large upward-facing plane: the floor. */
-    private fun detectFloorY(session: Session): Float? =
-        session.getAllTrackables(Plane::class.java)
-            .filter {
-                it.type == Plane.Type.HORIZONTAL_UPWARD_FACING &&
-                    it.trackingState == TrackingState.TRACKING &&
-                    it.subsumedBy == null &&
-                    it.extentX * it.extentZ >= MIN_FLOOR_AREA_M2
-            }
-            .minByOrNull { it.centerPose.ty() }
-            ?.centerPose?.ty()
+    /** Heights of the floor (lowest large plane facing up) and ceiling (highest large plane facing down). */
+    private fun detectLevels(session: Session): Pair<Float?, Float?> {
+        val planes = session.getAllTrackables(Plane::class.java).filter {
+            it.trackingState == TrackingState.TRACKING && it.subsumedBy == null && it.extentX * it.extentZ >= MIN_FLOOR_AREA_M2
+        }
+        val floor = planes.filter { it.type == Plane.Type.HORIZONTAL_UPWARD_FACING }.minByOrNull { it.centerPose.ty() }?.centerPose?.ty()
+        val ceiling = planes.filter { it.type == Plane.Type.HORIZONTAL_DOWNWARD_FACING }.maxByOrNull { it.centerPose.ty() }?.centerPose?.ty()
+            // The underside of a table also faces down: a ceiling is well above the floor.
+            ?.takeIf { c -> floor == null || c > floor + MIN_ROOM_HEIGHT_M }
+        return floor to ceiling
+    }
 
     private fun drawMeasurements(reticle: HitResult?) {
         if (measurements.isNotEmpty()) {
@@ -480,6 +480,7 @@ class ScanRenderer(
         private const val HINT_MS = 3_000L
         private const val UI_INTERVAL_MS = 80L
         private const val MIN_FLOOR_AREA_M2 = 0.5f
+        private const val MIN_ROOM_HEIGHT_M = 1.8f
 
         // Scanned surfaces in a highlight colour, not their own: points in the camera's colours
         // over the camera image read as a confusing double exposure.

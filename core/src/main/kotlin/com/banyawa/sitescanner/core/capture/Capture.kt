@@ -74,6 +74,8 @@ data class Manifest(
     val durationSec: Int = 0,
     /** Height of the floor plane ARCore detected, if any (ARCore world, metres). */
     val floorY: Float? = null,
+    /** Height of the ceiling plane ARCore detected, if any. */
+    val ceilingY: Float? = null,
     val depthSupported: Boolean = false,
     val notes: String = "",
 )

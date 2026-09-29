@@ -290,6 +290,7 @@ class ScanActivity : ComponentActivity() {
                     device = "${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})",
                     durationSec = controller.elapsedSec(),
                     floorY = result.floorY,
+                    ceilingY = result.ceilingY,
                     depthSupported = renderer.depthEnabled,
                     notes = controller.state.value.diagnostics + " · anchors corrected ${result.correctedPoses.size} keyframes",
                 ),

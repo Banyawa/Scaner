@@ -1,6 +1,8 @@
 package com.banyawa.sitescanner.core.mesh
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TriangleMeshTest {
@@ -40,6 +42,22 @@ class TriangleMeshTest {
     fun aSmallScanIsNotThrownAway() {
         val small = grid(3)
         assertEquals(small.triangleCount, small.withoutSmallParts(minTriangles = 200).triangleCount)
+    }
+
+    @Test
+    fun smoothingIronsOutNoiseWithoutShrinking() {
+        val noisy = grid(30)
+        val rnd = java.util.Random(7)
+        for (v in 0 until noisy.vertexCount) noisy.positions[v * 3 + 1] = (rnd.nextFloat() - 0.5f) * 0.04f
+        fun spread(m: TriangleMesh) = (0 until m.vertexCount).map { m.positions[it * 3 + 1] }.let { ys -> ys.map { it * it }.average() }
+        val smooth = noisy.smoothed(6)
+        assertTrue("noise: ${spread(noisy)} -> ${spread(smooth)}", spread(smooth) < spread(noisy) / 4)
+        assertEquals(noisy.triangleCount, smooth.triangleCount)
+        val before = noisy.bounds()!!
+        val after = smooth.bounds()!!
+        assertEquals(before.size.x, after.size.x, before.size.x * 0.03f)
+        assertEquals(before.size.z, after.size.z, before.size.z * 0.03f)
+        assertArrayEquals(noisy.colors, smooth.colors)
     }
 
     @Test

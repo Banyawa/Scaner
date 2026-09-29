@@ -235,6 +235,97 @@ class TsdfVolume(
     }
 
     /**
+     * Adds a horizontal surface at height [y] (the floor or ceiling plane the tracker found
+     * from the camera images) wherever nothing was fused around that height: glossy tiles and
+     * plain ceilings give the depth sensor nothing, while the tracker still knows where they
+     * are. The surface is laid over the room's footprint only: block columns lying between
+     * fused blocks both along x and along z. Voxels that already hold a measurement, free
+     * space included, are left alone, so real depth always wins. Returns the voxels set.
+     */
+    fun fillLevel(y: Float, facingUp: Boolean, rgb: Int = levelColour(y)): Int {
+        if (blocks.isEmpty()) return 0
+        var minX = Int.MAX_VALUE
+        var maxX = Int.MIN_VALUE
+        var minZ = Int.MAX_VALUE
+        var maxZ = Int.MIN_VALUE
+        for (b in blocks.indices) {
+            val bx = blockCoords[b * 3]
+            val bz = blockCoords[b * 3 + 2]
+            if (bx < minX) minX = bx
+            if (bx > maxX) maxX = bx
+            if (bz < minZ) minZ = bz
+            if (bz > maxZ) maxZ = bz
+        }
+        val w = maxX - minX + 1
+        val h = maxZ - minZ + 1
+        if (w.toLong() * h > MAX_FOOTPRINT_CELLS) return 0
+        val occupied = BooleanArray(w * h)
+        for (b in blocks.indices) occupied[(blockCoords[b * 3 + 2] - minZ) * w + (blockCoords[b * 3] - minX)] = true
+        val rowFirst = IntArray(h) { Int.MAX_VALUE }
+        val rowLast = IntArray(h) { Int.MIN_VALUE }
+        val colFirst = IntArray(w) { Int.MAX_VALUE }
+        val colLast = IntArray(w) { Int.MIN_VALUE }
+        for (z in 0 until h) for (x in 0 until w) {
+            if (!occupied[z * w + x]) continue
+            rowFirst[z] = min(rowFirst[z], x)
+            rowLast[z] = max(rowLast[z], x)
+            colFirst[x] = min(colFirst[x], z)
+            colLast[x] = max(colLast[x], z)
+        }
+
+        val iyLo = floor((y - truncation) * invVoxel).toInt()
+        val iyHi = floor((y + truncation) * invVoxel).toInt()
+        var set = 0
+        for (z in 0 until h) for (x in 0 until w) {
+            if (x < rowFirst[z] || x > rowLast[z] || z < colFirst[x] || z > colLast[x]) continue
+            for (by in (iyLo shr 3)..(iyHi shr 3)) {
+                if (abs(x + minX) >= COORD_LIMIT shr 3 || abs(by) >= COORD_LIMIT shr 3 || abs(z + minZ) >= COORD_LIMIT shr 3) continue
+                val block = blockAt(x + minX, by, z + minZ, create = true) ?: return set
+                for (i in 0 until VOXELS) {
+                    if (block.weight[i].toInt() != 0) continue
+                    val yc = (by * 8 + ((i shr 3) and 7) + 0.5f) * voxelSize
+                    val s = (if (facingUp) yc - y else y - yc) / truncation
+                    if (s < -1f || s > 1f) continue
+                    block.sdf[i] = (s * SDF_SCALE).roundToInt().toShort()
+                    block.weight[i] = LEVEL_WEIGHT.toByte()
+                    block.rgb[i * 3] = (rgb shr 16).toByte()
+                    block.rgb[i * 3 + 1] = (rgb shr 8).toByte()
+                    block.rgb[i * 3 + 2] = rgb.toByte()
+                    block.colorWeight[i] = LEVEL_WEIGHT.toByte()
+                    set++
+                }
+            }
+        }
+        return set
+    }
+
+    /** The average colour fused within a truncation of height [y], so a filled level blends in. */
+    private fun levelColour(y: Float): Int {
+        val iyLo = floor((y - truncation) * invVoxel).toInt()
+        val iyHi = floor((y + truncation) * invVoxel).toInt()
+        var r = 0L
+        var g = 0L
+        var b = 0L
+        var n = 0
+        for (bi in blocks.indices) {
+            val by = blockCoords[bi * 3 + 1]
+            if (by < (iyLo shr 3) || by > (iyHi shr 3)) continue
+            val block = blocks[bi]
+            for (i in 0 until VOXELS) {
+                if (block.colorWeight[i].toInt() == 0) continue
+                val iy = by * 8 + ((i shr 3) and 7)
+                if (iy < iyLo || iy > iyHi) continue
+                r += block.rgb[i * 3].toInt() and 0xFF
+                g += block.rgb[i * 3 + 1].toInt() and 0xFF
+                b += block.rgb[i * 3 + 2].toInt() and 0xFF
+                n++
+            }
+        }
+        if (n < MIN_COLOUR_SAMPLES) return LEVEL_RGB
+        return ((r / n).toInt() shl 16) or ((g / n).toInt() shl 8) or (b / n).toInt()
+    }
+
+    /**
      * Fused distance at a world point: negative behind a surface, positive in free space,
      * as a share of the truncation; NaN where nothing has been fused. With [weightOut] the
      * voxel's weight is written to `weightOut[0]`.
@@ -432,6 +523,12 @@ class TsdfVolume(
 
         /** Two close observations: a surface seen in a single frame is too likely noise. */
         const val DEFAULT_MIN_WEIGHT = 8
+
+        /** A filled floor or ceiling counts like a surface seen twice: meshed, but any depth outvotes it. */
+        private const val LEVEL_WEIGHT = DEFAULT_MIN_WEIGHT
+        private const val LEVEL_RGB = 0x9A9A9A
+        private const val MIN_COLOUR_SAMPLES = 200
+        private const val MAX_FOOTPRINT_CELLS = 4_000_000L
 
         private const val VOXELS = 512
         private const val L = 9
