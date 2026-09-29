@@ -68,6 +68,7 @@ class ScanRenderer(
     private val measurements = ArrayList<LiveMeasurement>()
     private var pendingStart: Anchor? = null
     private var lastFeatureTimestamp = 0L
+    private var retryKeyframe = false
     private var lastUiMs = 0L
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
@@ -144,27 +145,40 @@ class ScanRenderer(
      * points when depth is unsupported or never delivers a frame.
      */
     private fun integrate(frame: Frame, camera: Camera, now: Long) {
+        // A keyframe's depth can come a few frames late: collect it before taking another.
+        if (depthEnabled && capture.isArmed) {
+            collectDepth(frame, camera)
+            return
+        }
         if (controller.isBusy || controller.integrator.isFull) return
         camera.pose.toMatrix(pose, 0)
-        if (!keyframes.shouldCapture(pose, now)) return
+        // A keyframe that got no depth is retried on the next frame rather than after moving on.
+        if (!retryKeyframe && !keyframes.shouldCapture(pose, now)) return
+        retryKeyframe = false
         if (depthEnabled) {
             if (!capture.preferSmoothed && controller.depthYield.tooSparse()) {
                 capture.preferSmoothed = true
                 Log.i(TAG, "Raw depth keeps ${controller.depthYield.fraction()} of pixels: switching to smoothed depth")
             }
-            val depth = try {
-                capture.capture(frame, camera, pose, withColor = true, withSurface = true)
-            } catch (e: Exception) {
-                Log.w(TAG, "Depth capture failed", e)
-                null
-            }
-            if (depth != null) {
-                controller.submitDepth(depth)
-                return
-            }
+            capture.arm(frame, camera, pose, withColor = true)
+            collectDepth(frame, camera)
             if (controller.depthFrames > 0 || controller.recordingMs() < NO_DEPTH_FALLBACK_MS) return
         }
         integrateFeaturePoints(frame)
+    }
+
+    private fun collectDepth(frame: Frame, camera: Camera) {
+        val depth = try {
+            capture.poll(frame, camera, withSurface = true)
+        } catch (e: Exception) {
+            Log.w(TAG, "Depth capture failed", e)
+            capture.disarm()
+            null
+        }
+        when {
+            depth != null -> controller.submitDepth(depth)
+            !capture.isArmed -> retryKeyframe = true
+        }
     }
 
     private fun integrateFeaturePoints(frame: Frame) {
@@ -194,8 +208,9 @@ class ScanRenderer(
         val raw = controller.depthYield.fraction()?.let { " · raw kept ${(it * 100).roundToInt()}%" }.orEmpty()
         val tracking = if (camera.trackingState == TrackingState.TRACKING) "" else " · ${camera.trackingState}/${camera.trackingFailureReason}"
         val surface = if (controller.surfaceBlocks > 0) " · model ${controller.surfaceBlocks} blocks" else ""
+        val lag = if (depthEnabled) " · lag ${capture.lastLagMs.roundToInt()}ms" + (if (capture.matchesTimestamps) "" else " (unmatched)") else ""
         return "${Build.MANUFACTURER} ${Build.MODEL} · $source · ${controller.depthFrames + controller.featureFrames} frames · " +
-            "last +${controller.lastAccepted}$raw$surface$tracking"
+            "last +${controller.lastAccepted}$raw$surface$lag$tracking"
     }
 
     // --- measuring ----------------------------------------------------------------------
@@ -361,15 +376,16 @@ class ScanRenderer(
         private const val TAG = "ScanRenderer"
         private const val NEAR_M = 0.05f
         private const val FAR_M = 100f
-        private const val POINT_SIZE_PX = 6f
+        private const val POINT_SIZE_PX = 4f
 
         /** Recording this long without a single depth frame falls back to feature points. */
         private const val NO_DEPTH_FALLBACK_MS = 4_000L
         private const val UI_INTERVAL_MS = 80L
         private const val MIN_FLOOR_AREA_M2 = 0.5f
 
-        // A light tint: scanned surfaces keep their real colours but stand out from the camera image.
-        private val SCAN_TINT = floatArrayOf(0.0f, 0.85f, 1.0f, 0.3f)
+        // Scanned surfaces in a highlight colour, not their own: points in the camera's colours
+        // over the camera image read as a confusing double exposure.
+        private val SCAN_TINT = floatArrayOf(0.0f, 0.85f, 1.0f, 0.8f)
         private val MEASURE_COLOR = floatArrayOf(1.0f, 0.6f, 0.0f, 1f)
         private val PENDING_COLOR = floatArrayOf(1.0f, 0.9f, 0.2f, 1f)
         private val ENDPOINT_COLOR = floatArrayOf(1f, 1f, 1f, 1f)

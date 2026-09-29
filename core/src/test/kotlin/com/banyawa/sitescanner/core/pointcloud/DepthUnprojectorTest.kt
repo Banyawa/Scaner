@@ -49,6 +49,32 @@ class DepthUnprojectorTest {
     }
 
     @Test
+    fun flyingPixelsAtDepthEdgesAreDropped() {
+        // A box 1 m away covering the left half, the wall 3 m away on the right: the smeared
+        // pixel between them (2 m) and both columns touching it are edges.
+        val depth = ShortArray(w * h) { i -> if (i % w < 7) 1000 else 3000 }
+        for (row in 0 until h) depth[row * w + 7] = 2000
+        // A wall seen at an angle changes smoothly and is kept.
+        val frame = DepthFrame(w, h, depth, null, k, Mat4.identity())
+        val kept = HashSet<Int>()
+        var i = 0
+        DepthUnprojector.unproject(frame, DepthFilter(minConfidence = 0, maxEdgeJump = 0.05f), PointSink { x, _, z, _, _ ->
+            kept += Math.round(x / -z * 10f + 8f)
+            i++
+        })
+        assertEquals((0 until w).toSet() - setOf(6, 7, 8), kept)
+        assertEquals((w - 3) * h, i)
+
+        val slope = ShortArray(w * h) { idx -> (2000 + (idx % w) * 30).toShort() }
+        val all = DepthUnprojector.unproject(
+            DepthFrame(w, h, slope, null, k, Mat4.identity()),
+            DepthFilter(minConfidence = 0, maxEdgeJump = 0.05f),
+            PointSink { _, _, _, _, _ -> },
+        )
+        assertEquals(w * h, all)
+    }
+
+    @Test
     fun colourIsSampledThroughColourIntrinsics() {
         // Colour image twice the depth resolution, left half red, right half blue (in YUV).
         val cw = w * 2

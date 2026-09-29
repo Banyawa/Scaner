@@ -38,9 +38,28 @@ data class DepthFilter(
     val maxDepthM: Float = 4.0f,
     /** Sample every n-th pixel in both directions. */
     val pixelStep: Int = 1,
+    /**
+     * Drop pixels whose depth differs from a neighbour by more than this share of their own
+     * depth (0 = keep all). Depth cameras smear object edges into "flying pixels" hanging
+     * between the object and what is behind it; these are them.
+     */
+    val maxEdgeJump: Float = 0f,
 )
 
 object DepthUnprojector {
+    /** True when a 4-neighbour of pixel ([u], [v]) with depth [mm] has depth more than [maxJump]·[mm] away. */
+    fun isDepthEdge(frame: DepthFrame, u: Int, v: Int, mm: Int, maxJump: Float): Boolean {
+        val limit = mm * maxJump
+        val depth = frame.depthMm
+        val i = v * frame.width + u
+        fun jumps(j: Int): Boolean {
+            val n = depth[j].toInt() and 0xFFFF
+            return n != 0 && kotlin.math.abs(n - mm) > limit
+        }
+        return (u > 0 && jumps(i - 1)) || (u < frame.width - 1 && jumps(i + 1)) ||
+            (v > 0 && jumps(i - frame.width)) || (v < frame.height - 1 && jumps(i + frame.width))
+    }
+
     /**
      * Back-projects every valid depth pixel into world space and feeds it to [sink].
      * Returns the number of points emitted.
@@ -70,7 +89,9 @@ object DepthUnprojector {
                 if (mm != 0) {
                     val d = mm * 0.001f
                     val c = if (conf != null) conf[i].toInt() and 0xFF else 255
-                    if (d >= filter.minDepthM && d <= filter.maxDepthM && c >= filter.minConfidence) {
+                    if (d >= filter.minDepthM && d <= filter.maxDepthM && c >= filter.minConfidence &&
+                        !(filter.maxEdgeJump > 0f && isDepthEdge(frame, u, v, mm, filter.maxEdgeJump))
+                    ) {
                         val nx = (u - k.cx) * invFx
                         // Camera space, OpenGL convention.
                         val xc = d * nx

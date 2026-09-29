@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.update
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 enum class TrackingHint { NONE, INITIALIZING, MOVE_SLOWLY, MORE_LIGHT, MORE_TEXTURE, CAMERA_UNAVAILABLE }
 
@@ -63,7 +63,11 @@ class PreviewSnapshot(val version: Int, val cloud: PointCloud)
 class ScanController {
     // Low-confidence raw depth is let in and has to be seen several times to be saved
     // (see the weight filter on saving) rather than being thrown away up front.
-    val integrator = ScanIntegrator(voxelSize = VOXEL_SIZE_M, maxVoxels = MAX_VOXELS, filter = DepthFilter(minConfidence = MIN_RAW_CONFIDENCE))
+    val integrator = ScanIntegrator(
+        voxelSize = VOXEL_SIZE_M,
+        maxVoxels = MAX_VOXELS,
+        filter = DepthFilter(minConfidence = MIN_RAW_CONFIDENCE, maxEdgeJump = MAX_EDGE_JUMP),
+    )
 
     /** Share of raw depth pixels kept, for switching to smoothed depth when it is too low. */
     val depthYield = DepthYield()
@@ -92,7 +96,8 @@ class ScanController {
     private val worker = Executors.newSingleThreadExecutor { r ->
         Thread(r, "scan-fusion").apply { priority = Thread.NORM_PRIORITY - 1 }
     }
-    private val busy = AtomicBoolean(false)
+    /** Fusion jobs queued or running: at most [MAX_IN_FLIGHT], so work never piles up. */
+    private val inFlight = AtomicInteger(0)
     private val actions = ConcurrentLinkedQueue<ScanAction>()
 
     private val _state = MutableStateFlow(ScanUiState())
@@ -110,7 +115,7 @@ class ScanController {
     private var recordingSinceMs = 0L
     private var recordedMs = 0L
 
-    val isBusy: Boolean get() = busy.get()
+    val isBusy: Boolean get() = inFlight.get() > 0
 
     fun setRecording(on: Boolean) {
         synchronized(this) {
@@ -133,12 +138,14 @@ class ScanController {
     /** Raw depth frames also report their yield, which decides whether to keep using raw depth. */
     fun submitDepth(depth: CapturedDepth) = submit {
         val before = integrator.voxelCount
-        val kept = integrator.integrate(depth.points)
-        if (depth.raw) depthYield.add(kept, depth.points.width * depth.points.height)
+        depth.points?.let { points ->
+            val kept = integrator.integrate(points)
+            if (depth.raw) depthYield.add(kept, points.width * points.height)
+        }
         lastAccepted = integrator.voxelCount - before
         depthFrames++
         depth.surface?.let {
-            surface.integrate(it)
+            surface.integrate(it, DepthFilter(minConfidence = 0, maxEdgeJump = MAX_EDGE_JUMP))
             surfaceBlocks = surface.blockCount
         }
     }
@@ -162,7 +169,10 @@ class ScanController {
     }
 
     private fun submit(work: () -> Unit) {
-        if (!busy.compareAndSet(false, true)) return
+        if (inFlight.incrementAndGet() > MAX_IN_FLIGHT) {
+            inFlight.decrementAndGet()
+            return
+        }
         try {
             worker.execute {
                 try {
@@ -171,11 +181,11 @@ class ScanController {
                 } catch (t: Throwable) {
                     Log.e(TAG, "Fusion failed", t)
                 } finally {
-                    busy.set(false)
+                    inFlight.decrementAndGet()
                 }
             }
         } catch (e: RejectedExecutionException) {
-            busy.set(false)
+            inFlight.decrementAndGet()
         }
     }
 
@@ -217,11 +227,17 @@ class ScanController {
         /** Raw depth confidence (0..255) below which a pixel is not used at all. */
         private const val MIN_RAW_CONFIDENCE = 60
 
+        /** Depth jumping by more than this share to a neighbouring pixel marks an edge's flying pixels. */
+        private const val MAX_EDGE_JUMP = 0.05f
+
         /** A quarter of the heap for the surface model, at about 3.5 KB per block. */
         private fun surfaceBlockBudget(): Int =
             (Runtime.getRuntime().maxMemory() / 4 / 3_600).toInt().coerceIn(4_000, 40_000)
 
         private const val PREVIEW_INTERVAL_MS = 400L
+
+        /** A running job plus one waiting: a keyframe's depth that arrives late still gets in. */
+        private const val MAX_IN_FLIGHT = 2
         private const val PREVIEW_MAX_POINTS = 400_000
     }
 }

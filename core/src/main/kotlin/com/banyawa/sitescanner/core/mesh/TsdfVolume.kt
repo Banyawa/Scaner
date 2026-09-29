@@ -2,6 +2,7 @@ package com.banyawa.sitescanner.core.mesh
 
 import com.banyawa.sitescanner.core.pointcloud.DepthFilter
 import com.banyawa.sitescanner.core.pointcloud.DepthFrame
+import com.banyawa.sitescanner.core.pointcloud.DepthUnprojector
 import com.banyawa.sitescanner.core.pointcloud.YuvFrame
 import com.banyawa.sitescanner.core.util.FloatList
 import com.banyawa.sitescanner.core.util.IntList
@@ -112,7 +113,9 @@ class TsdfVolume(
         if (mm == 0) return 0f
         val c = frame.confidence?.let { it[i].toInt() and 0xFF } ?: 255
         val d = mm * 0.001f
-        return if (d >= filter.minDepthM && d <= filter.maxDepthM && c >= filter.minConfidence) d else 0f
+        if (d < filter.minDepthM || d > filter.maxDepthM || c < filter.minConfidence) return 0f
+        if (filter.maxEdgeJump > 0f && DepthUnprojector.isDepthEdge(frame, i % frame.width, i / frame.width, mm, filter.maxEdgeJump)) return 0f
+        return d
     }
 
     private fun touch(x: Float, y: Float, z: Float, touched: IntList) {
