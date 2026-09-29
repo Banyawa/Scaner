@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Scan frame corners -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M30,41 L30,30 L41,30 M67,30 L78,30 L78,41 M78,67 L78,78 L67,78 M41,78 L30,78 L30,67"
+        android:strokeWidth="3.5"
+        android:strokeColor="#FFFFA000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <!-- Isometric room box -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,37 L69,45.5 L54,54 L39,45.5 Z" />
+    <path
+        android:fillColor="#FFD4E3FF"
+        android:pathData="M39,45.5 L54,54 L54,71 L39,62.5 Z" />
+    <path
+        android:fillColor="#FFA5C8FF"
+        android:pathData="M69,45.5 L69,62.5 L54,71 L54,54 Z" />
+</vector>

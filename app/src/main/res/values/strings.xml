@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Site Scanner 3D</string>
+
+    <!-- Common actions -->
+    <string name="action_back">Back</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_close">Close</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_discard">Discard</string>
+    <string name="action_export">Export</string>
+    <string name="action_floor_plan">Floor plan</string>
+    <string name="action_retry">Try again</string>
+    <string name="action_save">Save</string>
+    <string name="action_view_3d">3D view</string>
+
+    <!-- Projects -->
+    <string name="project_new">New project</string>
+    <string name="project_edit">Edit project</string>
+    <string name="project_name">Project / site name</string>
+    <string name="project_location">Location</string>
+    <string name="project_notes">Notes</string>
+    <string name="project_created">Created %1$s</string>
+    <string name="project_missing">Project not found</string>
+    <string name="project_delete_title">Delete project?</string>
+    <string name="project_delete_message">\"%1$s\" and all of its scans will be permanently deleted.</string>
+    <string name="projects_empty_title">No projects yet</string>
+    <string name="projects_empty_body">Create a project for each job site, then scan rooms in 3D to get dimensions for shop drawings.</string>
+    <plurals name="scan_count">
+        <item quantity="one">%d scan</item>
+        <item quantity="other">%d scans</item>
+    </plurals>
+    <string name="ar_not_supported">This device does not support ARCore. You can view and export existing scans, but scanning needs an ARCore-supported phone.</string>
+
+    <!-- Scans -->
+    <string name="scan_new">Scan</string>
+    <string name="scans_empty_title">No scans yet</string>
+    <string name="scans_empty_body">Tap Scan, then walk slowly along the walls keeping the phone 1–3 m from surfaces.</string>
+    <string name="scan_summary">%1$s points · %2$d measurements · %3$s</string>
+    <string name="scan_missing">Scan not found</string>
+    <string name="scan_delete_title">Delete scan?</string>
+    <string name="scan_delete_message">\"%1$s\" will be permanently deleted.</string>
+    <string name="scan_mode_depth">Depth</string>
+    <string name="scan_mode_features">Feature points</string>
+
+    <!-- Scanning (AR) -->
+    <string name="scan_status_starting">Starting AR…</string>
+    <string name="scan_status_ready">Ready — press record to scan</string>
+    <string name="scan_status_recording">Scanning…</string>
+    <string name="scan_hint_initializing">Move the phone slowly to start tracking</string>
+    <string name="scan_hint_move_slowly">Moving too fast — slow down</string>
+    <string name="scan_hint_more_light">Too dark — add more light</string>
+    <string name="scan_hint_more_texture">Aim at areas with more detail</string>
+    <string name="scan_stats">%1$s · %2$s pts · %3$s</string>
+    <string name="scan_tip_start">Press record, then sweep slowly across walls, floor and ceiling.</string>
+    <string name="scan_no_depth_warning">No Depth API on this phone: only sparse points are captured. Measurements still work.</string>
+    <string name="scan_storage_full">Point limit reached. Save this scan and start a new one for the next area.</string>
+    <string name="scan_aim_second_point">Aim the crosshair at the end point</string>
+    <string name="scan_live_distance">Distance: %1$s</string>
+    <string name="scan_measure_start">Measure</string>
+    <string name="scan_measure_end">End point</string>
+    <string name="scan_undo">Undo</string>
+    <string name="scan_record">Record</string>
+    <string name="scan_pause">Pause</string>
+    <string name="scan_save_title">Save scan</string>
+    <string name="scan_name">Scan name</string>
+    <string name="scan_default_name">Scan %1$s</string>
+    <string name="scan_saving">Saving scan…</string>
+    <string name="scan_discard_title">Discard this scan?</string>
+    <string name="scan_discard_message">Unsaved points and measurements will be lost.</string>
+    <string name="scan_keep_scanning">Keep scanning</string>
+
+    <!-- Errors -->
+    <string name="error_camera_permission">Camera permission is needed to scan.</string>
+    <string name="error_camera_unavailable">The camera is unavailable. Close other camera apps and try again.</string>
+    <string name="error_arcore_declined">Google Play Services for AR is required to scan.</string>
+    <string name="error_arcore_update">Please install or update Google Play Services for AR.</string>
+    <string name="error_app_update">Please update this app to use AR on this device.</string>
+    <string name="error_device_not_supported">This device does not support ARCore.</string>
+    <string name="error_ar_generic">Could not start AR.</string>
+    <string name="error_save_failed">Could not save the scan: %1$s</string>
+
+    <!-- Measurements -->
+    <string name="measurement_default_label">Measurement %1$d</string>
+    <string name="measurement_label_title">Label for %1$s</string>
+    <string name="measurement_label_hint">e.g. Door width, Wall A</string>
+
+    <!-- Viewer -->
+    <string name="viewer_info">%1$s points</string>
+    <string name="viewer_reset">Reset view</string>
+    <string name="viewer_toggle_colors">Toggle colour / height</string>
+
+    <!-- Floor plan -->
+    <string name="plan_analyzing">Analysing scan…</string>
+    <string name="plan_no_walls">No walls found. Scan the walls between knee and head height, keeping 1–3 m away.</string>
+    <string name="plan_walls">Walls</string>
+    <string name="plan_total_length">Total length</string>
+    <string name="plan_room_height">Floor–ceiling</string>
+
+    <!-- Export -->
+    <string name="export_dxf">Plan DXF (AutoCAD)</string>
+    <string name="export_ply">Point cloud PLY</string>
+    <string name="export_pts">Point cloud PTS (ReCap)</string>
+    <string name="export_obj">Walls 3D OBJ</string>
+    <string name="export_csv">Measurements CSV</string>
+    <string name="export_share_title">Share export</string>
+    <string name="export_failed">Export failed</string>
+</resources>
