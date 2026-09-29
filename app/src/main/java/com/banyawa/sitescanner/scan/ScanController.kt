@@ -233,7 +233,7 @@ class ScanController {
         const val MAX_VOXELS = 3_000_000
 
         /** Raw depth confidence (0..255) below which a pixel is not used at all. */
-        private const val MIN_RAW_CONFIDENCE = 60
+        private const val MIN_RAW_CONFIDENCE = 100
 
         /** Depth jumping by more than this share to a neighbouring pixel marks an edge's flying pixels. */
         private const val MAX_EDGE_JUMP = 0.05f

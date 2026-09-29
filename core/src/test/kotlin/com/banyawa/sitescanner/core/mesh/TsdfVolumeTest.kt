@@ -130,6 +130,45 @@ class TsdfVolumeTest {
     }
 
     @Test
+    fun aWrongFrameIsCarvedAwayByTheOthers() {
+        val volume = TsdfVolume()
+        // A tracking slip: the wall's depth is right but the pose is 30° off, so the wall
+        // lands as a slanted sheet cutting through the room.
+        val straight = render(lookAt(Vec3(0f, 0f, -0.5f), Vec3(0f, 0f, -1f)), hit = ::wall)
+        val slipped = lookAt(Vec3(0f, 0f, -0.5f), Vec3(sin(0.52f), 0f, -0.5f - cos(0.52f)))
+        val bad = DepthFrame(k.width, k.height, straight.depthMm, null, k, slipped)
+        // Seen twice: enough weight to be meshed on its own.
+        volume.integrate(bad)
+        volume.integrate(bad)
+        val sheet = volume.extractMesh()
+        val sheetInRoom = (0 until sheet.vertexCount).count { sheet.positions[it * 3 + 2] > -1.9f }
+        assertTrue("the sheet exists before carving: $sheetInRoom", sheetInRoom > 500)
+        val onSheet = FloatArray(3).also { p ->
+            // A point 1.5 m along the slipped view direction: the middle of the sheet.
+            p[0] = 1.5f * sin(0.52f); p[1] = 0f; p[2] = -0.5f - 1.5f * cos(0.52f)
+        }
+        assertEquals(0f, volume.sdfAt(onSheet[0], onSheet[1], onSheet[2]), 0.3f)
+
+        // Frames that look through the sheet at the real wall behind it.
+        val t0 = System.nanoTime()
+        for (x in listOf(-0.4f, 0f, 0.4f)) for (yaw in listOf(0f, 0.35f, 0.7f)) {
+            val eye = Vec3(x, 0f, 0f)
+            volume.integrate(render(lookAt(eye, eye + Vec3(sin(yaw), 0f, -cos(yaw))), hit = ::wall))
+        }
+        println("PERF carve integrate ${(System.nanoTime() - t0) / 1e6 / 9} ms/frame")
+        val mesh = volume.extractMesh()
+        val offWall = (0 until mesh.vertexCount).count { mesh.positions[it * 3 + 2] > -1.9f }
+        assertTrue("off-wall vertices left: $offWall of ${mesh.vertexCount}", offWall < mesh.vertexCount * 0.03)
+        assertTrue("wall intact: ${mesh.triangleCount}", mesh.triangleCount > 3_000)
+        // The sheet's spot is now known free space; the wall still has its zero crossing
+        // (shifted a voxel or two back by the bad frames' votes, which the good ones outvote).
+        assertTrue(volume.sdfAt(onSheet[0], onSheet[1], onSheet[2]) > 0.5f)
+        assertTrue(volume.sdfAt(0f, 0f, wallZ + 0.1f) > 0.5f)
+        assertTrue(volume.sdfAt(0f, 0f, wallZ - 0.06f) < 0f)
+        assertTrue(volume.sdfAt(0f, 0f, 5f).isNaN())
+    }
+
+    @Test
     fun surfaceSeenOnceIsNotMeshed() {
         val volume = TsdfVolume()
         // One far glance: below the default weight needed to trust a surface.

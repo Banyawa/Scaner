@@ -7,6 +7,7 @@ import com.banyawa.sitescanner.core.pointcloud.DepthFrame
 import com.banyawa.sitescanner.core.pointcloud.DepthUnprojector
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.pointcloud.VoxelPointCloud
+import kotlin.math.abs
 
 /** Where a capture frame's depth comes from: the recording itself, or estimated from the images. */
 interface DepthSource {
@@ -53,7 +54,7 @@ data class ReconstructionOptions(
     val maxPoints: Int = 3_000_000,
     val maxDepthM: Float = 4f,
     /** Raw depth confidence (0..255) below which a pixel is not used. */
-    val minRawConfidence: Int = 60,
+    val minRawConfidence: Int = 100,
     /** Depth jumping by more than this share to a neighbouring pixel marks an edge's flying pixels. */
     val maxEdgeJump: Float = 0.05f,
     /** Voxels seen only once with low confidence are dropped from the point cloud. */
@@ -125,12 +126,41 @@ class Reconstructor(
 
         val filtered = points.toPointCloud(options.minPointWeight)
         // Low confidence everywhere (dim light, plain walls) would filter out nearly everything.
-        val cloud = if (filtered.size < points.size * MIN_KEPT_FRACTION) points.toPointCloud() else filtered
+        val weighted = if (filtered.size < points.size * MIN_KEPT_FRACTION) points.toPointCloud() else filtered
+        val cloud = consistentPoints(weighted, surface)
 
         progress?.onProgress("mesh", 0, 1)
         val mesh = if (isCancelled()) TriangleMesh.EMPTY else surface.extractMesh().withoutSmallParts()
         progress?.onProgress("mesh", 1, 1)
         return ReconstructionResult(cloud, mesh, indices.size, depthFrames, capture.manifest.floorY)
+    }
+
+    /**
+     * Points the fused surface agrees with: a point sitting in space the other frames saw
+     * through (a guessed depth on a plain wall, a tracking slip) is dropped, as is one
+     * only a single frame ever saw. Points where nothing was fused at all are kept.
+     */
+    private fun consistentPoints(cloud: PointCloud, surface: TsdfVolume): PointCloud {
+        if (cloud.size == 0 || surface.blockCount == 0) return cloud
+        val keep = BooleanArray(cloud.size)
+        val w = IntArray(1)
+        var n = 0
+        for (i in 0 until cloud.size) {
+            val sdf = surface.sdfAt(cloud.xyz[i * 3], cloud.xyz[i * 3 + 1], cloud.xyz[i * 3 + 2], w)
+            keep[i] = sdf.isNaN() || (w[0] >= MIN_CONSISTENT_WEIGHT && abs(sdf) <= MAX_SURFACE_DISTANCE)
+            if (keep[i]) n++
+        }
+        if (n == cloud.size) return cloud
+        val xyz = FloatArray(n * 3)
+        val rgb = ByteArray(n * 3)
+        var o = 0
+        for (i in 0 until cloud.size) {
+            if (!keep[i]) continue
+            cloud.xyz.copyInto(xyz, o * 3, i * 3, i * 3 + 3)
+            cloud.rgb.copyInto(rgb, o * 3, i * 3, i * 3 + 3)
+            o++
+        }
+        return PointCloud(xyz, rgb)
     }
 
     /** Every frame up to [max], else evenly spaced ones. */
@@ -139,5 +169,11 @@ class Reconstructor(
 
     private companion object {
         const val MIN_KEPT_FRACTION = 0.2f
+
+        /** Fused weight a point's voxel needs (two close observations). */
+        const val MIN_CONSISTENT_WEIGHT = 6
+
+        /** Farthest a kept point may sit from the fused surface, as a share of the truncation. */
+        const val MAX_SURFACE_DISTANCE = 0.6f
     }
 }

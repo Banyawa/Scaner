@@ -38,6 +38,9 @@ class TsdfVolume(
     }
 
     private val invVoxel = 1f / voxelSize
+
+    /** Carving rays sample a little finer than a block so no block on the way is skipped. */
+    private val carveStep = voxelSize * 8 * 0.7f
     private val index = LongIntMap(4096)
     private val blocks = ArrayList<Block>()
     private val blockCoords = IntList()
@@ -92,7 +95,16 @@ class TsdfVolume(
                         for (j in -1..1) {
                             // Points on the ray at the surface and a truncation before and behind it.
                             val t = d + j * truncation / len
-                            touch(ox + dx * t, oy + dy * t, oz + dz * t, touched)
+                            touch(ox + dx * t, oy + dy * t, oz + dz * t, touched, create = true)
+                        }
+                        // Space carving: everything between the camera and the surface is free.
+                        // Surfaces other frames put there (depth guessed on a plain wall, a
+                        // tracking slip) get pushed out again; only blocks that exist take part.
+                        var t = filter.minDepthM
+                        val end = d - truncation / len
+                        while (t < end) {
+                            touch(ox + dx * t, oy + dy * t, oz + dz * t, touched, create = false)
+                            t += carveStep
                         }
                     }
                 }
@@ -118,12 +130,12 @@ class TsdfVolume(
         return d
     }
 
-    private fun touch(x: Float, y: Float, z: Float, touched: IntList) {
+    private fun touch(x: Float, y: Float, z: Float, touched: IntList, create: Boolean) {
         val ix = floor(x * invVoxel).toInt()
         val iy = floor(y * invVoxel).toInt()
         val iz = floor(z * invVoxel).toInt()
         if (abs(ix) >= COORD_LIMIT || abs(iy) >= COORD_LIMIT || abs(iz) >= COORD_LIMIT) return
-        blockAt(ix shr 3, iy shr 3, iz shr 3, create = true) ?: return
+        blockAt(ix shr 3, iy shr 3, iz shr 3, create) ?: return
         val idx = cachedIndex
         if (blockStamps[idx] != stamp) {
             blockStamps[idx] = stamp
@@ -169,7 +181,10 @@ class TsdfVolume(
             } else {
                 NO_COLOR
             }
-            update(block, i, min(sdf, truncation) / truncation, observationWeight(d, c), rgb)
+            // Free space counts in full at any distance: a surface measured well beyond the voxel
+            // says the voxel is empty even when the measurement is a little off.
+            val w = if (sdf > truncation) MAX_OBSERVATION_WEIGHT else observationWeight(d, c)
+            update(block, i, min(sdf, truncation) / truncation, w, rgb)
             updated++
         }
         return updated
@@ -217,6 +232,23 @@ class TsdfVolume(
         cachedIndex = idx
         cachedBlock = blocks[idx]
         return blocks[idx]
+    }
+
+    /**
+     * Fused distance at a world point: negative behind a surface, positive in free space,
+     * as a share of the truncation; NaN where nothing has been fused. With [weightOut] the
+     * voxel's weight is written to `weightOut[0]`.
+     */
+    fun sdfAt(x: Float, y: Float, z: Float, weightOut: IntArray? = null): Float {
+        val ix = floor(x * invVoxel).toInt()
+        val iy = floor(y * invVoxel).toInt()
+        val iz = floor(z * invVoxel).toInt()
+        if (abs(ix) >= COORD_LIMIT || abs(iy) >= COORD_LIMIT || abs(iz) >= COORD_LIMIT) return Float.NaN
+        val block = blockAt(ix shr 3, iy shr 3, iz shr 3, create = false) ?: return Float.NaN
+        val i = (ix and 7) or ((iy and 7) shl 3) or ((iz and 7) shl 6)
+        val w = block.weight[i].toInt() and 0xFF
+        weightOut?.set(0, w)
+        return if (w == 0) Float.NaN else block.sdf[i] / SDF_SCALE
     }
 
     /**
