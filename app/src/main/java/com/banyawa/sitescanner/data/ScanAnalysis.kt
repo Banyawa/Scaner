@@ -1,19 +1,34 @@
 package com.banyawa.sitescanner.data
 
+import android.graphics.BitmapFactory
+import android.util.Log
 import com.banyawa.sitescanner.core.export.MeshPly
 import com.banyawa.sitescanner.core.export.Ply
 import com.banyawa.sitescanner.core.floorplan.Elevation
 import com.banyawa.sitescanner.core.floorplan.ElevationBuilder
 import com.banyawa.sitescanner.core.floorplan.FloorPlanExtractor
 import com.banyawa.sitescanner.core.floorplan.FloorPlanResult
+import com.banyawa.sitescanner.core.mesh.TexturedMesh
 import com.banyawa.sitescanner.core.mesh.TriangleMesh
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
+import com.banyawa.sitescanner.core.pointcloud.RgbImage
 import com.banyawa.sitescanner.core.project.ProjectRepository
 import com.banyawa.sitescanner.core.project.ScanInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.File
+
+/**
+ * A scan's surface model as saved. [uv] and [atlas] are there when it has a photo texture;
+ * older models, and builds whose texturing failed, have only their vertex colours.
+ */
+class LoadedMesh(val mesh: TriangleMesh, val uv: FloatArray?, val atlas: RgbImage?) {
+    /** The model with its photo texture; null when it has only vertex colours. */
+    val textured: TexturedMesh? =
+        if (uv != null && atlas != null && uv.size == mesh.vertexCount * 2) TexturedMesh(mesh, uv, atlas) else null
+}
 
 /**
  * Loads scan point clouds and computes floor plans and elevations, caching the most recent
@@ -26,7 +41,7 @@ class ScanAnalysis(val repository: ProjectRepository) {
     private var cachedPlan: FloorPlanResult? = null
     private var cachedElevations: List<Elevation>? = null
     private var cachedMeshKey: String? = null
-    private var cachedMesh: TriangleMesh? = null
+    private var cachedMesh: LoadedMesh? = null
 
     suspend fun cloud(projectId: String, scan: ScanInfo): PointCloud = mutex.withLock {
         val key = key(projectId, scan)
@@ -43,16 +58,50 @@ class ScanAnalysis(val repository: ProjectRepository) {
     }
 
     /** The scan's colour surface model, or null when it has none (older scans, no depth). */
-    suspend fun mesh(projectId: String, scan: ScanInfo): TriangleMesh? {
+    suspend fun mesh(projectId: String, scan: ScanInfo): LoadedMesh? {
         if (!scan.hasMesh) return null
         val file = repository.meshFile(projectId, scan) ?: return null
-        val key = "$projectId/${scan.id}/${file.lastModified()}"
+        val atlasFile = repository.atlasFile(projectId, scan)
+        // A rebuild rewrites both files; either changing means the cached model is stale.
+        val key = "$projectId/${scan.id}/${file.lastModified()}/${atlasFile?.lastModified()}"
         return mutex.withLock {
             if (key != cachedMeshKey) {
-                cachedMesh = withContext(Dispatchers.IO) { if (file.isFile) MeshPly.read(file) else null }
+                // Drop the old model first: two textured models may not fit in memory together.
+                cachedMesh = null
+                cachedMeshKey = null
+                cachedMesh = withContext(Dispatchers.IO) {
+                    if (file.isFile) {
+                        val data = MeshPly.readTextured(file)
+                        val atlas = if (data.uv != null && atlasFile != null) readAtlas(atlasFile) else null
+                        LoadedMesh(data.mesh, data.uv, atlas)
+                    } else {
+                        null
+                    }
+                }
                 cachedMeshKey = key
             }
             cachedMesh
+        }
+    }
+
+    /**
+     * The photo texture as 0xRRGGBB pixels, top row first like the texture coordinates.
+     * Null when it is missing or does not fit in memory: the model then shows its vertex colours.
+     */
+    private fun readAtlas(file: File): RgbImage? {
+        if (!file.isFile) return null
+        return try {
+            val bitmap = BitmapFactory.decodeFile(file.path) ?: return null
+            val w = bitmap.width
+            val h = bitmap.height
+            val pixels = IntArray(w * h)
+            bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+            bitmap.recycle()
+            for (i in pixels.indices) pixels[i] = pixels[i] and 0xFFFFFF
+            RgbImage(w, h, pixels)
+        } catch (e: OutOfMemoryError) {
+            Log.w(TAG, "Not enough memory for the model's texture", e)
+            null
         }
     }
 
@@ -96,5 +145,9 @@ class ScanAnalysis(val repository: ProjectRepository) {
     private fun key(projectId: String, scan: ScanInfo): String {
         val file = repository.scanFile(projectId, scan)
         return "$projectId/${scan.id}/${file.lastModified()}"
+    }
+
+    private companion object {
+        const val TAG = "ScanAnalysis"
     }
 }

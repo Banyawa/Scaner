@@ -103,10 +103,21 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
                 ExportFormat.CSV_OPENINGS -> file.bufferedWriter().use {
                     OpeningCsv.write(result.plan.openings, it, scan.name)
                 }
-                ExportFormat.GLB_MODEL -> file.outputStream().use { Glb.write(MeshFrames.siteYUp(mesh(project, scan), alignment), it, title) }
-                ExportFormat.OBJ_MODEL -> file.bufferedWriter().use { MeshObj.write(MeshFrames.siteYUp(mesh(project, scan), alignment), it) }
+                ExportFormat.GLB_MODEL -> {
+                    val model = mesh(project, scan)
+                    val textured = model.textured
+                    file.outputStream().use {
+                        // The photo texture travels inside the GLB, so viewers show the model as photographed.
+                        if (textured != null) {
+                            Glb.write(textured.withMesh(MeshFrames.siteYUp(textured.mesh, alignment)), it, title, AndroidImageEncoder)
+                        } else {
+                            Glb.write(MeshFrames.siteYUp(model.mesh, alignment), it, title)
+                        }
+                    }
+                }
+                ExportFormat.OBJ_MODEL -> file.bufferedWriter().use { MeshObj.write(MeshFrames.siteYUp(mesh(project, scan).mesh, alignment), it) }
                 ExportFormat.PLY_MODEL -> file.outputStream().use {
-                    MeshPly.write(MeshFrames.siteZUp(mesh(project, scan), alignment), it, "frame site Z-up metres")
+                    MeshPly.write(MeshFrames.siteZUp(mesh(project, scan).mesh, alignment), it, "frame site Z-up metres")
                 }
             }
             file

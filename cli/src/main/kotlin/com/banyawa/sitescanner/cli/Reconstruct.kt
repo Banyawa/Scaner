@@ -12,6 +12,7 @@ import com.banyawa.sitescanner.core.export.MeshPly
 import com.banyawa.sitescanner.core.export.Ply
 import com.banyawa.sitescanner.core.floorplan.FloorPlanExtractor
 import com.banyawa.sitescanner.core.floorplan.SiteAlignment
+import com.banyawa.sitescanner.core.mesh.MeshTexturer
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -61,7 +62,11 @@ fun main(args: Array<String>) {
     val start = System.currentTimeMillis()
     var lastLine = ""
     val progress = ProgressListener { stage, done, total ->
-        val line = if (stage == "fuse") "Fusing frames $done / $total" else "Extracting surface"
+        val line = when (stage) {
+            "fuse" -> "Fusing frames $done / $total"
+            "texture" -> "Texturing $done / $total"
+            else -> "Extracting surface"
+        }
         if (line != lastLine) {
             println(line)
             lastLine = line
@@ -79,6 +84,19 @@ fun main(args: Array<String>) {
         MeshPly.write(result.mesh, File(outDir, "model.ply"))
     }
     MeshPreview.renderViews(result.mesh.takeUnless { it.isEmpty() }, result.cloud, outDir)
+    if (!result.mesh.isEmpty()) {
+        val textured = runCatching { MeshTexturer(JvmImageDecoder).texture(result.mesh, capture, progress) }
+            .onFailure { System.err.println("Texturing skipped: ${it.message}") }
+            .getOrNull()
+        if (textured != null) {
+            File(outDir, "model_textured.glb").outputStream().use {
+                Glb.write(textured.withMesh(MeshFrames.siteYUp(textured.mesh, alignment)), it, captureDir.name, JvmImageEncoder)
+            }
+            File(outDir, "atlas.jpg").writeBytes(JvmImageEncoder.encodeJpeg(textured.atlas, 85))
+            MeshPreview.renderViews(textured, outDir)
+            println("Photo-textured model: model_textured.glb, ${textured.triangleCount} triangles, atlas ${textured.atlas.width}x${textured.atlas.height}")
+        }
+    }
     PoseExportsHook.write(capture, outDir)
     println("Written to ${outDir.path}")
 }

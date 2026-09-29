@@ -57,6 +57,7 @@
     <string name="scans_empty_body">Tap Scan, then walk slowly along the walls keeping the phone 1–3 m from surfaces.</string>
     <string name="scan_summary">%1$s points · %2$d measurements · %3$s</string>
     <string name="scan_model_summary">Colour 3D model · %1$s triangles</string>
+    <string name="scan_model_textured">Colour 3D model · %1$s triangles · photo texture</string>
     <string name="scan_recording_summary">Recording kept · %1$d frames</string>
     <string name="scan_no_model_yet">No model yet. Tap Generate 3D model.</string>
     <string name="action_generate_model">Generate 3D model</string>
@@ -116,6 +117,7 @@
     <!-- Viewer -->
     <string name="viewer_info">%1$s points</string>
     <string name="viewer_info_model">3D model · %1$s triangles</string>
+    <string name="viewer_info_textured">3D model · %1$s triangles · photo texture</string>
     <string name="viewer_show_points">Show points</string>
     <string name="viewer_show_model">Show 3D model</string>
     <string name="viewer_reset">Reset view</string>

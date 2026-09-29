@@ -6,10 +6,10 @@ import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
-import com.banyawa.sitescanner.core.mesh.TriangleMesh
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.project.Measurement
 import com.banyawa.sitescanner.core.viewer.OrbitCamera
+import com.banyawa.sitescanner.data.LoadedMesh
 import com.banyawa.sitescanner.gl.LineRenderer
 import com.banyawa.sitescanner.gl.MeshRenderer
 import com.banyawa.sitescanner.gl.PointRenderer
@@ -54,10 +54,13 @@ class PointCloudView(context: Context) : GLSurfaceView(context) {
     private var shownColors: ByteArray? = null
     private var shownMeasurements: List<Measurement>? = null
     private var shownOpenings: OpeningFrames? = null
-    private var shownMesh: TriangleMesh? = null
+    private var shownMesh: LoadedMesh? = null
 
-    /** Shows [mesh] (the colour surface model) instead of the points when it is not null. */
-    fun setContent(cloud: PointCloud, colors: ByteArray, measurements: List<Measurement>, openings: OpeningFrames, mesh: TriangleMesh?) {
+    /**
+     * Shows [mesh] (the surface model, photo-textured when it has a texture) instead of
+     * the points when it is not null.
+     */
+    fun setContent(cloud: PointCloud, colors: ByteArray, measurements: List<Measurement>, openings: OpeningFrames, mesh: LoadedMesh?) {
         if (cloud === shownCloud && colors === shownColors && measurements == shownMeasurements &&
             openings === shownOpenings && mesh === shownMesh
         ) return
@@ -145,8 +148,8 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
 
     private var cloud: PointCloud? = null
     private var colors: ByteArray? = null
-    private var mesh: TriangleMesh? = null
-    private var meshUploaded: TriangleMesh? = null
+    private var mesh: LoadedMesh? = null
+    private var meshUploaded: LoadedMesh? = null
     private var measurementLines = FloatArray(0)
     private var openings = OpeningFrames.EMPTY
     private var uploaded = false
@@ -158,7 +161,7 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
         colors: ByteArray,
         measurements: List<Measurement>,
         openings: OpeningFrames,
-        mesh: TriangleMesh?,
+        mesh: LoadedMesh?,
         refit: Boolean,
     ) {
         this.cloud = cloud
@@ -206,7 +209,8 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
         val m = mesh
         if (m != null) {
             if (meshUploaded !== m) {
-                surface.upload(m)
+                val textured = m.textured
+                if (textured != null) surface.upload(textured.mesh, textured.uv, textured.atlas) else surface.upload(m.mesh)
                 meshUploaded = m
             }
             // Headlight: lit from where the viewer stands.

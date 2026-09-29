@@ -55,6 +55,7 @@
     <string name="scans_empty_body">กด สแกน แล้วเดินช้า ๆ ไปตามผนัง ถือมือถือห่างจากพื้นผิว 1–3 เมตร</string>
     <string name="scan_summary">%1$s จุด · วัด %2$d ระยะ · %3$s</string>
     <string name="scan_model_summary">โมเดล 3D สีจริง · %1$s สามเหลี่ยม</string>
+    <string name="scan_model_textured">โมเดล 3D · %1$s สามเหลี่ยม · ภาพถ่ายจริง</string>
     <string name="scan_recording_summary">เก็บวิดีโอไว้ · %1$d เฟรม</string>
     <string name="scan_no_model_yet">ยังไม่มีโมเดล กด "สร้างโมเดล 3D"</string>
     <string name="action_generate_model">สร้างโมเดล 3D</string>
@@ -114,6 +115,7 @@
     <!-- Viewer -->
     <string name="viewer_info">%1$s จุด</string>
     <string name="viewer_info_model">โมเดล 3D · %1$s สามเหลี่ยม</string>
+    <string name="viewer_info_textured">โมเดล 3D · %1$s สามเหลี่ยม · ภาพถ่ายจริง</string>
     <string name="viewer_show_points">แสดงแบบจุด</string>
     <string name="viewer_show_model">แสดงโมเดล 3D</string>
     <string name="viewer_reset">รีเซ็ตมุมมอง</string>

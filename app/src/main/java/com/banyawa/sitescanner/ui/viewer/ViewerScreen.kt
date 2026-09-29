@@ -47,10 +47,10 @@ import com.banyawa.sitescanner.core.floorplan.FloorPlan
 import com.banyawa.sitescanner.core.floorplan.Opening
 import com.banyawa.sitescanner.core.floorplan.OpeningType
 import com.banyawa.sitescanner.core.geometry.Vec2
-import com.banyawa.sitescanner.core.mesh.TriangleMesh
 import com.banyawa.sitescanner.core.pointcloud.ColorMaps
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.project.ScanInfo
+import com.banyawa.sitescanner.data.LoadedMesh
 import com.banyawa.sitescanner.ui.common.formatCount
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,8 +66,8 @@ sealed interface ViewerState {
         val cloud: PointCloud,
         val heightColors: ByteArray,
         val openings: OpeningFrames = OpeningFrames.EMPTY,
-        /** Colour surface model, when the scan has one. */
-        val mesh: TriangleMesh? = null,
+        /** Surface model, when the scan has one; photo-textured when it has a texture. */
+        val mesh: LoadedMesh? = null,
     ) : ViewerState
     data object Missing : ViewerState
 }
@@ -208,7 +208,10 @@ fun ViewerScreen(projectId: String, scanId: String, onBack: () -> Unit) {
                     )
                     Text(
                         if (s.mesh != null && !showPoints && !heightColors) {
-                            stringResource(R.string.viewer_info_model, formatCount(s.mesh.triangleCount))
+                            stringResource(
+                                if (s.mesh.textured != null) R.string.viewer_info_textured else R.string.viewer_info_model,
+                                formatCount(s.mesh.mesh.triangleCount),
+                            )
                         } else {
                             stringResource(R.string.viewer_info, formatCount(s.cloud.size))
                         },

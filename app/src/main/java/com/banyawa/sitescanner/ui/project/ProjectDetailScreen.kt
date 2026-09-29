@@ -429,7 +429,10 @@ private fun ScanCard(
                     )
                     if (scan.hasMesh) {
                         Text(
-                            stringResource(R.string.scan_model_summary, formatCount(scan.meshTriangles)),
+                            stringResource(
+                                if (scan.meshAtlas != null) R.string.scan_model_textured else R.string.scan_model_summary,
+                                formatCount(scan.meshTriangles),
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                         )
