@@ -80,9 +80,9 @@ object DepthUnprojector {
                         val wy = m[1] * xc + m[5] * yc + m[9] * zc + m[13]
                         val wz = m[2] * xc + m[6] * yc + m[10] * zc + m[14]
                         val rgb = if (colorize) {
-                            val px = (ck!!.fx * nx + ck.cx + 0.5f).toInt()
+                            val px = (ck.fx * nx + ck.cx + 0.5f).toInt()
                             val py = (ck.fy * ny + ck.cy + 0.5f).toInt()
-                            color!!.rgbAt(px, py)
+                            color.rgbAt(px, py)
                         } else {
                             YuvFrame.DEFAULT_RGB
                         }
