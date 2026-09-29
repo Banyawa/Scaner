@@ -48,8 +48,25 @@
 ## ติดตั้ง APK
 
 1. เปิดแท็บ **Actions** ของ repo นี้ → เลือก run ล่าสุดของ *Android CI* ที่ผ่าน (✅)
-2. ดาวน์โหลด artifact **site-scanner-debug-apk** (ไฟล์ zip) แล้วแตกไฟล์ได้ `app-debug.apk`
+2. ดาวน์โหลด artifact **site-scanner-debug-apk** (ไฟล์ zip, ต้อง login GitHub) แล้วแตกไฟล์ได้ `app-debug.apk`
 3. ส่งไฟล์เข้ามือถือ → เปิดติดตั้ง (อนุญาต *ติดตั้งแอปจากแหล่งที่ไม่รู้จัก* ครั้งแรก)
+
+**อัปเดต:** ทุก build ลงนามด้วย key เดียวกัน (เมื่อตั้งค่า secret ด้านล่างแล้ว) จึงติดตั้งทับเวอร์ชันเดิมได้เลย
+โปรเจกต์และสแกนในเครื่องยังอยู่ เลขเวอร์ชันคือ `0.1.<เลข run ของ CI>` (ดูได้ใน ตั้งค่า → แอป)
+APK ที่ build ก่อนตั้ง key ลงนามด้วย key ชั่วคราว ต้องถอนออกหนึ่งครั้งก่อนลง build ใหม่
+(ส่งออกงานที่ต้องเก็บไว้ก่อน เพราะการถอนแอปจะลบข้อมูลในเครื่อง)
+
+### ตั้งค่า signing key (ครั้งเดียว, สำหรับเจ้าของ repo)
+
+ใน GitHub: **Settings → Secrets and variables → Actions → New repository secret** เพิ่ม 2 ค่า
+
+| Secret | ค่า |
+|---|---|
+| `SIGNING_KEYSTORE_BASE64` | ไฟล์ keystore (PKCS12, alias `sitescanner`) แปลงเป็น base64 เช่น `base64 -w0 site-scanner-signing.p12` |
+| `SIGNING_PASSWORD` | รหัสผ่านของ keystore (ใช้รหัสเดียวกันทั้ง store และ key) |
+
+ถ้าไม่มี secret (เช่น fork หรือ build ในเครื่อง) จะลงนามด้วย debug key ปกติและ CI ขึ้นคำเตือน
+**เก็บไฟล์ keystore และรหัสผ่านสำรองไว้ในที่ปลอดภัย** ถ้าหาย จะอัปเดตทับแอปเดิมไม่ได้อีก ห้าม commit ไฟล์ keystore เข้า repo
 
 ## วิธีสแกนให้แม่น
 

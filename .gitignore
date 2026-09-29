@@ -25,4 +25,5 @@ Thumbs.db
 # Signing
 *.jks
 *.keystore
+*.p12
 keystore.properties

@@ -6,6 +6,15 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+// One fixed key, so every new APK installs over the previous one and keeps its data. CI
+// decodes it from the repository secrets; without them (forks, local builds) the usual
+// throwaway debug key signs instead.
+val stableKeystore = System.getenv("SIGNING_KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.isFile }
+val stableKeyPassword = System.getenv("SIGNING_PASSWORD")?.takeIf { it.isNotEmpty() }
+
+// CI builds count up so each one is an update; local builds stay at 1.
+val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+
 android {
     namespace = "com.banyawa.sitescanner"
     compileSdk = 36
@@ -15,12 +24,27 @@ android {
         // ARCore requires API 24+.
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = buildNumber
+        versionName = "0.1.$buildNumber"
+    }
+
+    signingConfigs {
+        if (stableKeystore != null && stableKeyPassword != null) {
+            create("stable") {
+                storeFile = stableKeystore
+                storePassword = stableKeyPassword
+                keyAlias = "sitescanner"
+                keyPassword = stableKeyPassword
+            }
+        }
     }
 
     buildTypes {
+        getByName("debug") {
+            signingConfigs.findByName("stable")?.let { signingConfig = it }
+        }
         release {
+            signingConfigs.findByName("stable")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
