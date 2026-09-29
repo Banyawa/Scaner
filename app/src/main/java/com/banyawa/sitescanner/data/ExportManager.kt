@@ -7,7 +7,11 @@ import androidx.core.content.FileProvider
 import com.banyawa.sitescanner.R
 import com.banyawa.sitescanner.core.export.ElevationDxf
 import com.banyawa.sitescanner.core.export.FloorPlanDxf
+import com.banyawa.sitescanner.core.export.Glb
 import com.banyawa.sitescanner.core.export.MeasurementCsv
+import com.banyawa.sitescanner.core.export.MeshFrames
+import com.banyawa.sitescanner.core.export.MeshObj
+import com.banyawa.sitescanner.core.export.MeshPly
 import com.banyawa.sitescanner.core.export.OpeningCsv
 import com.banyawa.sitescanner.core.export.Ply
 import com.banyawa.sitescanner.core.export.Pts
@@ -19,7 +23,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-enum class ExportFormat(val extension: String, val mimeType: String, @StringRes val label: Int) {
+/** [needsMesh]: only for scans with a colour surface model. */
+enum class ExportFormat(val extension: String, val mimeType: String, @StringRes val label: Int, val needsMesh: Boolean = false) {
+    GLB_MODEL("glb", "model/gltf-binary", R.string.export_model_glb, needsMesh = true),
+    OBJ_MODEL("obj", "text/plain", R.string.export_model_obj, needsMesh = true),
+    PLY_MODEL("ply", "application/octet-stream", R.string.export_model_ply, needsMesh = true),
     DXF_PLAN("dxf", "application/dxf", R.string.export_dxf),
     DXF_ELEVATIONS("dxf", "application/dxf", R.string.export_elevations_dxf),
     PLY("ply", "application/octet-stream", R.string.export_ply),
@@ -55,6 +63,7 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
                 ExportFormat.OBJ_WALLS -> "walls"
                 ExportFormat.CSV_MEASUREMENTS -> "measurements"
                 ExportFormat.CSV_OPENINGS -> "doors_windows"
+                ExportFormat.GLB_MODEL, ExportFormat.OBJ_MODEL, ExportFormat.PLY_MODEL -> "model"
                 else -> "points"
             }
             val file = File(dir, "${safeName(project.name)}_${safeName(scan.name)}_$suffix.${format.extension}")
@@ -80,10 +89,18 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
                 ExportFormat.CSV_OPENINGS -> file.bufferedWriter().use {
                     OpeningCsv.write(result.plan.openings, it, scan.name)
                 }
+                ExportFormat.GLB_MODEL -> file.outputStream().use { Glb.write(MeshFrames.siteYUp(mesh(project, scan), alignment), it, title) }
+                ExportFormat.OBJ_MODEL -> file.bufferedWriter().use { MeshObj.write(MeshFrames.siteYUp(mesh(project, scan), alignment), it) }
+                ExportFormat.PLY_MODEL -> file.outputStream().use {
+                    MeshPly.write(MeshFrames.siteZUp(mesh(project, scan), alignment), it, "frame site Z-up metres")
+                }
             }
             file
         }
     }
+
+    private suspend fun mesh(project: Project, scan: ScanInfo) =
+        analysis.mesh(project.id, scan) ?: throw IllegalStateException(context.getString(R.string.export_no_model))
 
     private fun safeName(s: String) =
         s.trim().replace(Regex("[^\\p{L}\\p{M}\\p{N}._-]+"), "_").trim('_').ifEmpty { "scan" }.take(40)

@@ -6,10 +6,12 @@ import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import com.banyawa.sitescanner.core.mesh.TriangleMesh
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.project.Measurement
 import com.banyawa.sitescanner.core.viewer.OrbitCamera
 import com.banyawa.sitescanner.gl.LineRenderer
+import com.banyawa.sitescanner.gl.MeshRenderer
 import com.banyawa.sitescanner.gl.PointRenderer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -52,15 +54,20 @@ class PointCloudView(context: Context) : GLSurfaceView(context) {
     private var shownColors: ByteArray? = null
     private var shownMeasurements: List<Measurement>? = null
     private var shownOpenings: OpeningFrames? = null
+    private var shownMesh: TriangleMesh? = null
 
-    fun setContent(cloud: PointCloud, colors: ByteArray, measurements: List<Measurement>, openings: OpeningFrames) {
-        if (cloud === shownCloud && colors === shownColors && measurements == shownMeasurements && openings === shownOpenings) return
+    /** Shows [mesh] (the colour surface model) instead of the points when it is not null. */
+    fun setContent(cloud: PointCloud, colors: ByteArray, measurements: List<Measurement>, openings: OpeningFrames, mesh: TriangleMesh?) {
+        if (cloud === shownCloud && colors === shownColors && measurements == shownMeasurements &&
+            openings === shownOpenings && mesh === shownMesh
+        ) return
         val refit = cloud !== shownCloud
         shownCloud = cloud
         shownColors = colors
         shownMeasurements = measurements
         shownOpenings = openings
-        queueEvent { renderer.setContent(cloud, colors, measurements, openings, refit) }
+        shownMesh = mesh
+        queueEvent { renderer.setContent(cloud, colors, measurements, openings, mesh, refit) }
         requestRender()
     }
 
@@ -134,19 +141,30 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
     val camera = OrbitCamera()
     private val points = PointRenderer()
     private val lines = LineRenderer()
+    private val surface = MeshRenderer()
 
     private var cloud: PointCloud? = null
     private var colors: ByteArray? = null
+    private var mesh: TriangleMesh? = null
+    private var meshUploaded: TriangleMesh? = null
     private var measurementLines = FloatArray(0)
     private var openings = OpeningFrames.EMPTY
     private var uploaded = false
     private var width = 1
     private var height = 1
 
-    fun setContent(cloud: PointCloud, colors: ByteArray, measurements: List<Measurement>, openings: OpeningFrames, refit: Boolean) {
+    fun setContent(
+        cloud: PointCloud,
+        colors: ByteArray,
+        measurements: List<Measurement>,
+        openings: OpeningFrames,
+        mesh: TriangleMesh?,
+        refit: Boolean,
+    ) {
         this.cloud = cloud
         this.colors = colors
         this.openings = openings
+        this.mesh = mesh
         measurementLines = FloatArray(measurements.size * 6).also { arr ->
             measurements.forEachIndexed { i, m ->
                 arr[i * 6] = m.start.x; arr[i * 6 + 1] = m.start.y; arr[i * 6 + 2] = m.start.z
@@ -166,7 +184,9 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
         GLES20.glEnable(GLES20.GL_DEPTH_TEST)
         points.createOnGlThread()
         lines.createOnGlThread()
+        surface.createOnGlThread()
         uploaded = false
+        meshUploaded = null
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -183,7 +203,18 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
             uploaded = true
         }
         val viewProj = camera.viewProjection(width.toFloat() / height.coerceAtLeast(1))
-        points.draw(viewProj, POINT_SIZE_PX)
+        val m = mesh
+        if (m != null) {
+            if (meshUploaded !== m) {
+                surface.upload(m)
+                meshUploaded = m
+            }
+            // Headlight: lit from where the viewer stands.
+            val toEye = (camera.eye() - camera.target).normalized()
+            surface.draw(viewProj, floatArrayOf(toEye.x, toEye.y, toEye.z))
+        } else {
+            points.draw(viewProj, POINT_SIZE_PX)
+        }
         lines.draw(viewProj, openings.doors, DOOR_COLOR, GLES20.GL_LINES, lineWidth = 4f)
         lines.draw(viewProj, openings.windows, WINDOW_COLOR, GLES20.GL_LINES, lineWidth = 4f)
         if (measurementLines.isNotEmpty()) {

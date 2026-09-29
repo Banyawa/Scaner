@@ -19,8 +19,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.banyawa.sitescanner.R
 import com.banyawa.sitescanner.SiteScannerApp
+import com.banyawa.sitescanner.core.export.MeshPly
 import com.banyawa.sitescanner.core.export.Ply
 import com.banyawa.sitescanner.core.project.CaptureMode
+import com.banyawa.sitescanner.core.project.ProjectRepository
+import com.banyawa.sitescanner.core.project.ScanInfo
 import com.banyawa.sitescanner.ui.theme.SiteScannerTheme
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
@@ -208,7 +211,7 @@ class ScanActivity : ComponentActivity() {
                     // nearly everything; keeping every point beats saving an empty scan.
                     val cloud = if (filtered.size < all * MIN_KEPT_FRACTION) controller.integrator.snapshot() else filtered
                     Log.i(TAG, "Saving ${cloud.size} of $all points (${filtered.size} above the confidence threshold)")
-                    val scan = repository.newScan(name).copy(
+                    var scan = repository.newScan(name).copy(
                         pointCount = cloud.size,
                         floorY = result.floorY,
                         captureMode = if (depth) CaptureMode.RAW_DEPTH else CaptureMode.FEATURE_POINTS,
@@ -216,6 +219,7 @@ class ScanActivity : ComponentActivity() {
                         measurements = result.measurements,
                     )
                     Ply.write(cloud, repository.scanFile(projectId, scan))
+                    scan = withSurfaceModel(repository, scan)
                     repository.upsertScan(projectId, scan)
                 }
             }
@@ -229,6 +233,26 @@ class ScanActivity : ComponentActivity() {
             }
         }
     }
+
+    /**
+     * Saves the colour surface model next to the points. Meshing is best effort: if it fails
+     * (e.g. out of memory on a huge scan) the scan is still saved with its points.
+     */
+    private fun withSurfaceModel(repository: ProjectRepository, scan: ScanInfo): ScanInfo =
+        try {
+            val mesh = controller.extractSurface()
+            if (mesh.isEmpty()) {
+                scan
+            } else {
+                val meshed = scan.copy(meshFile = repository.meshFileName(scan), meshTriangles = mesh.triangleCount)
+                MeshPly.write(mesh, repository.meshFile(projectId, meshed)!!)
+                Log.i(TAG, "Saved surface model: ${mesh.triangleCount} triangles")
+                meshed
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "Surface model not saved", t)
+            scan
+        }
 
     companion object {
         private const val TAG = "ScanActivity"

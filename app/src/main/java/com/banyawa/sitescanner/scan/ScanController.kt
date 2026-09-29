@@ -3,8 +3,9 @@ package com.banyawa.sitescanner.scan
 import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.StringRes
+import com.banyawa.sitescanner.core.mesh.TriangleMesh
+import com.banyawa.sitescanner.core.mesh.TsdfVolume
 import com.banyawa.sitescanner.core.pointcloud.DepthFilter
-import com.banyawa.sitescanner.core.pointcloud.DepthFrame
 import com.banyawa.sitescanner.core.pointcloud.DepthYield
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.pointcloud.ScanIntegrator
@@ -67,6 +68,14 @@ class ScanController {
     /** Share of raw depth pixels kept, for switching to smoothed depth when it is too low. */
     val depthYield = DepthYield()
 
+    /** Colour surface model, fused on the worker thread only. */
+    private val surface = TsdfVolume(maxBlocks = surfaceBlockBudget())
+
+    /** Blocks of the surface model so far (each 16 cm cube near a surface). */
+    @Volatile
+    var surfaceBlocks = 0
+        private set
+
     @Volatile
     var depthFrames = 0
         private set
@@ -121,14 +130,29 @@ class ScanController {
         recordedMs + live
     }
 
-    /** [raw]: the frame is raw depth, whose yield decides whether to keep using it. */
-    fun submitDepth(frame: DepthFrame, raw: Boolean) = submit {
+    /** Raw depth frames also report their yield, which decides whether to keep using raw depth. */
+    fun submitDepth(depth: CapturedDepth) = submit {
         val before = integrator.voxelCount
-        val kept = integrator.integrate(frame)
-        if (raw) depthYield.add(kept, frame.width * frame.height)
+        val kept = integrator.integrate(depth.points)
+        if (depth.raw) depthYield.add(kept, depth.points.width * depth.points.height)
         lastAccepted = integrator.voxelCount - before
         depthFrames++
+        depth.surface?.let {
+            surface.integrate(it)
+            surfaceBlocks = surface.blockCount
+        }
     }
+
+    /**
+     * The fused surface as a mesh, loose specks removed; empty without depth. Runs on the
+     * fusion worker after any queued frames. Call off the main thread.
+     */
+    fun extractSurface(): TriangleMesh =
+        try {
+            worker.submit<TriangleMesh> { surface.extractMesh().withoutSmallParts() }.get()
+        } catch (e: RejectedExecutionException) {
+            TriangleMesh.EMPTY
+        }
 
     fun submitFeaturePoints(xyzc: FloatArray, count: Int) = submit {
         val before = integrator.voxelCount
@@ -192,6 +216,11 @@ class ScanController {
 
         /** Raw depth confidence (0..255) below which a pixel is not used at all. */
         private const val MIN_RAW_CONFIDENCE = 60
+
+        /** A quarter of the heap for the surface model, at about 3.5 KB per block. */
+        private fun surfaceBlockBudget(): Int =
+            (Runtime.getRuntime().maxMemory() / 4 / 3_600).toInt().coerceIn(4_000, 40_000)
+
         private const val PREVIEW_INTERVAL_MS = 400L
         private const val PREVIEW_MAX_POINTS = 400_000
     }

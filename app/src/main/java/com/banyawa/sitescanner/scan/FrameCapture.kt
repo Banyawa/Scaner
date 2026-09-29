@@ -12,6 +12,12 @@ import com.google.ar.core.exceptions.NotYetAvailableException
 import com.google.ar.core.CameraIntrinsics as ArIntrinsics
 
 /**
+ * One keyframe's depth. [points] feeds the point cloud (raw depth unless it proved too
+ * sparse); [surface] is ARCore's smoothed depth, every pixel filled, for the surface model.
+ */
+class CapturedDepth(val points: DepthFrame, val raw: Boolean, val surface: DepthFrame?)
+
+/**
  * Copies ARCore's raw depth, depth confidence and CPU camera image out of the current
  * frame so they can be processed off the GL thread (ARCore images must be closed quickly).
  * A device whose raw depth keeps failing, or gives too few confident pixels
@@ -29,54 +35,83 @@ class FrameCapture {
     /** True when the next depth frame comes from smoothed rather than raw depth. */
     val usingSmoothedDepth: Boolean get() = preferSmoothed || rawDepthFailures >= MAX_RAW_FAILURES
 
-    /** Returns null when no new depth image is available for this frame. */
-    fun capture(frame: Frame, camera: Camera, cameraToWorld: FloatArray, withColor: Boolean): DepthFrame? {
-        val depthImage = acquireDepth(frame) ?: return null
+    /**
+     * Returns null when no new depth image is available for this frame. With
+     * [withSurface] the smoothed depth for the surface model is copied as well.
+     */
+    fun capture(frame: Frame, camera: Camera, cameraToWorld: FloatArray, withColor: Boolean, withSurface: Boolean): CapturedDepth? {
+        val raw = !usingSmoothedDepth
+        val depthImage = acquireDepth(frame, raw) ?: return null
+        val color: Pair<YuvFrame, CameraIntrinsics>?
+        val points: DepthFrame
         try {
             if (depthImage.timestamp == lastDepthTimestamp) return null
             lastDepthTimestamp = depthImage.timestamp
-            val w = depthImage.width
-            val h = depthImage.height
-            val depthPlane = depthImage.planes[0]
-            val depth = ImagePacking.packShortPlane(depthPlane.buffer, w, h, depthPlane.rowStride, depthPlane.pixelStride)
+            color = if (withColor) captureColor(frame, camera) else null
             // Confidence only exists for raw depth; smoothed depth counts as fully confident.
-            val confidence = if (usingSmoothedDepth) null else captureConfidence(frame, w, h)
-            val intrinsics = camera.textureIntrinsics.toCore().scaledTo(w, h)
-            val color = if (withColor) captureColor(frame, camera) else null
-            return DepthFrame(
-                width = w,
-                height = h,
-                depthMm = depth,
-                confidence = confidence,
-                intrinsics = intrinsics,
-                cameraToWorld = cameraToWorld.copyOf(),
-                color = color?.first,
-                colorIntrinsics = color?.second,
-                timestampNs = depthImage.timestamp,
-            )
+            val confidence = if (raw) captureConfidence(frame, depthImage.width, depthImage.height) else null
+            points = toDepthFrame(depthImage, confidence, camera, cameraToWorld, color)
         } finally {
             depthImage.close()
         }
-    }
-
-    private fun acquireDepth(frame: Frame): Image? {
-        if (!usingSmoothedDepth) {
-            try {
-                return frame.acquireRawDepthImage16Bits()
-            } catch (e: NotYetAvailableException) {
-                return null
-            } catch (e: Exception) {
-                rawDepthFailures++
-                Log.w(TAG, "Raw depth unavailable ($rawDepthFailures)", e)
-                if (!usingSmoothedDepth) return null
+        val surface = when {
+            !withSurface -> null
+            !raw -> points
+            else -> smoothedDepth(frame)?.let { image ->
+                try {
+                    toDepthFrame(image, null, camera, cameraToWorld, color)
+                } finally {
+                    image.close()
+                }
             }
         }
+        return CapturedDepth(points, raw, surface)
+    }
+
+    private fun toDepthFrame(
+        image: Image,
+        confidence: ByteArray?,
+        camera: Camera,
+        cameraToWorld: FloatArray,
+        color: Pair<YuvFrame, CameraIntrinsics>?,
+    ): DepthFrame {
+        val w = image.width
+        val h = image.height
+        val plane = image.planes[0]
+        return DepthFrame(
+            width = w,
+            height = h,
+            depthMm = ImagePacking.packShortPlane(plane.buffer, w, h, plane.rowStride, plane.pixelStride),
+            confidence = confidence,
+            intrinsics = camera.textureIntrinsics.toCore().scaledTo(w, h),
+            cameraToWorld = cameraToWorld.copyOf(),
+            color = color?.first,
+            colorIntrinsics = color?.second,
+            timestampNs = image.timestamp,
+        )
+    }
+
+    /** Raw depth when [raw] (counting failures towards the switch to smoothed), else smoothed. */
+    private fun acquireDepth(frame: Frame, raw: Boolean): Image? {
+        if (!raw) return smoothedDepth(frame)
         return try {
-            frame.acquireDepthImage16Bits()
+            frame.acquireRawDepthImage16Bits()
         } catch (e: NotYetAvailableException) {
+            null
+        } catch (e: Exception) {
+            rawDepthFailures++
+            Log.w(TAG, "Raw depth unavailable ($rawDepthFailures)", e)
             null
         }
     }
+
+    private fun smoothedDepth(frame: Frame): Image? =
+        try {
+            frame.acquireDepthImage16Bits()
+        } catch (e: Exception) {
+            // NotYetAvailable, or smoothed depth unsupported: no surface for this frame.
+            null
+        }
 
     private fun captureConfidence(frame: Frame, w: Int, h: Int): ByteArray? {
         val image = try {

@@ -8,7 +8,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.Grain
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -45,6 +47,7 @@ import com.banyawa.sitescanner.core.floorplan.FloorPlan
 import com.banyawa.sitescanner.core.floorplan.Opening
 import com.banyawa.sitescanner.core.floorplan.OpeningType
 import com.banyawa.sitescanner.core.geometry.Vec2
+import com.banyawa.sitescanner.core.mesh.TriangleMesh
 import com.banyawa.sitescanner.core.pointcloud.ColorMaps
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.project.ScanInfo
@@ -63,6 +66,8 @@ sealed interface ViewerState {
         val cloud: PointCloud,
         val heightColors: ByteArray,
         val openings: OpeningFrames = OpeningFrames.EMPTY,
+        /** Colour surface model, when the scan has one. */
+        val mesh: TriangleMesh? = null,
     ) : ViewerState
     data object Missing : ViewerState
 }
@@ -81,14 +86,15 @@ class ViewerViewModel(projectId: String, scanId: String, private val app: SiteSc
             // Phones render a few million points comfortably; decimate beyond that.
             val cloud = app.analysis.cloud(projectId, scan).decimated(MAX_DISPLAY_POINTS)
             val heights = withContext(Dispatchers.Default) { ColorMaps.byHeight(cloud) }
-            _state.value = ViewerState.Loaded(scan, cloud, heights)
+            val mesh = runCatching { app.analysis.mesh(projectId, scan) }.getOrNull()
+            _state.value = ViewerState.Loaded(scan, cloud, heights, mesh = mesh)
 
             // Door / window outlines follow once the (slower) floor-plan analysis is done.
             val frames = runCatching {
                 val plan = app.analysis.floorPlan(projectId, scan).plan
                 withContext(Dispatchers.Default) { openingFrames(plan) }
             }.getOrNull() ?: return@launch
-            _state.value = ViewerState.Loaded(scan, cloud, heights, frames)
+            _state.value = ViewerState.Loaded(scan, cloud, heights, frames, mesh)
         }
     }
 
@@ -141,6 +147,7 @@ fun ViewerScreen(projectId: String, scanId: String, onBack: () -> Unit) {
     val vm: ViewerViewModel = viewModel { ViewerViewModel(projectId, scanId, context.app) }
     val state by vm.state.collectAsStateWithLifecycle()
     var heightColors by rememberSaveable { mutableStateOf(false) }
+    var showPoints by rememberSaveable { mutableStateOf(false) }
     val view = remember { PointCloudView(context) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -167,6 +174,14 @@ fun ViewerScreen(projectId: String, scanId: String, onBack: () -> Unit) {
                     }
                 },
                 actions = {
+                    if (loaded?.mesh != null) {
+                        IconButton(onClick = { showPoints = !showPoints }) {
+                            Icon(
+                                if (showPoints) Icons.Filled.ViewInAr else Icons.Filled.Grain,
+                                contentDescription = stringResource(if (showPoints) R.string.viewer_show_model else R.string.viewer_show_points),
+                            )
+                        }
+                    }
                     IconButton(onClick = { heightColors = !heightColors }) {
                         Icon(Icons.Filled.Palette, contentDescription = stringResource(R.string.viewer_toggle_colors))
                     }
@@ -185,12 +200,18 @@ fun ViewerScreen(projectId: String, scanId: String, onBack: () -> Unit) {
                     AndroidView(
                         factory = { view },
                         update = {
-                            it.setContent(s.cloud, if (heightColors) s.heightColors else s.cloud.rgb, s.scan.measurements, s.openings)
+                            // Height colours are a point-cloud view.
+                            val mesh = s.mesh.takeUnless { showPoints || heightColors }
+                            it.setContent(s.cloud, if (heightColors) s.heightColors else s.cloud.rgb, s.scan.measurements, s.openings, mesh)
                         },
                         modifier = Modifier.fillMaxSize(),
                     )
                     Text(
-                        stringResource(R.string.viewer_info, formatCount(s.cloud.size)),
+                        if (s.mesh != null && !showPoints && !heightColors) {
+                            stringResource(R.string.viewer_info_model, formatCount(s.mesh.triangleCount))
+                        } else {
+                            stringResource(R.string.viewer_info, formatCount(s.cloud.size))
+                        },
                         color = Color.White,
                         style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier

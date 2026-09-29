@@ -152,14 +152,14 @@ class ScanRenderer(
                 capture.preferSmoothed = true
                 Log.i(TAG, "Raw depth keeps ${controller.depthYield.fraction()} of pixels: switching to smoothed depth")
             }
-            val depthFrame = try {
-                capture.capture(frame, camera, pose, withColor = true)
+            val depth = try {
+                capture.capture(frame, camera, pose, withColor = true, withSurface = true)
             } catch (e: Exception) {
                 Log.w(TAG, "Depth capture failed", e)
                 null
             }
-            if (depthFrame != null) {
-                controller.submitDepth(depthFrame, raw = !capture.usingSmoothedDepth)
+            if (depth != null) {
+                controller.submitDepth(depth)
                 return
             }
             if (controller.depthFrames > 0 || controller.recordingMs() < NO_DEPTH_FALLBACK_MS) return
@@ -193,8 +193,9 @@ class ScanRenderer(
         }
         val raw = controller.depthYield.fraction()?.let { " · raw kept ${(it * 100).roundToInt()}%" }.orEmpty()
         val tracking = if (camera.trackingState == TrackingState.TRACKING) "" else " · ${camera.trackingState}/${camera.trackingFailureReason}"
+        val surface = if (controller.surfaceBlocks > 0) " · model ${controller.surfaceBlocks} blocks" else ""
         return "${Build.MANUFACTURER} ${Build.MODEL} · $source · ${controller.depthFrames + controller.featureFrames} frames · " +
-            "last +${controller.lastAccepted}$raw$tracking"
+            "last +${controller.lastAccepted}$raw$surface$tracking"
     }
 
     // --- measuring ----------------------------------------------------------------------

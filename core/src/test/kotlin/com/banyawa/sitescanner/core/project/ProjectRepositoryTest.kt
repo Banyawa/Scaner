@@ -48,13 +48,19 @@ class ProjectRepositoryTest {
         assertEquals(now, updated.updatedAt)
         assertEquals(1f, repo.get(p.id)!!.scans[0].measurements[0].lengthM, 1e-6f)
 
-        repo.upsertScan(p.id, scan.copy(name = "Renamed"))
+        assertNull(repo.meshFile(p.id, scan))
+        val meshed = scan.copy(name = "Renamed", meshFile = repo.meshFileName(scan), meshTriangles = 10)
+        repo.meshFile(p.id, meshed)!!.writeText("ply")
+        repo.upsertScan(p.id, meshed)
         assertEquals(listOf("Renamed"), repo.get(p.id)!!.scans.map { it.name })
+        assertTrue(repo.get(p.id)!!.scans[0].hasMesh)
 
         val file = repo.scanFile(p.id, scan)
-        assertTrue(file.exists())
+        val mesh = repo.meshFile(p.id, meshed)!!
+        assertTrue(file.exists() && mesh.exists())
         repo.deleteScan(p.id, scan.id)
         assertFalse(file.exists())
+        assertFalse(mesh.exists())
         assertTrue(repo.get(p.id)!!.scans.isEmpty())
 
         assertTrue(repo.delete(p.id))

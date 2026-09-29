@@ -397,6 +397,13 @@ private fun ScanCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    if (scan.hasMesh) {
+                        Text(
+                            stringResource(R.string.scan_model_summary, formatCount(scan.meshTriangles)),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
                 }
                 IconButton(onClick = onDelete) {
                     Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.action_delete))
@@ -449,7 +456,7 @@ private fun ScanCard(
                         Text(stringResource(R.string.action_export))
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        ExportFormat.entries.forEach { format ->
+                        ExportFormat.entries.filter { !it.needsMesh || scan.hasMesh }.forEach { format ->
                             DropdownMenuItem(
                                 text = { Text(stringResource(format.label)) },
                                 onClick = {

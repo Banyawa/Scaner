@@ -56,6 +56,7 @@
     <string name="scans_empty_title">No scans yet</string>
     <string name="scans_empty_body">Tap Scan, then walk slowly along the walls keeping the phone 1–3 m from surfaces.</string>
     <string name="scan_summary">%1$s points · %2$d measurements · %3$s</string>
+    <string name="scan_model_summary">Colour 3D model · %1$s triangles</string>
     <string name="scan_missing">Scan not found</string>
     <string name="scan_delete_title">Delete scan?</string>
     <string name="scan_delete_message">\"%1$s\" will be permanently deleted.</string>
@@ -107,6 +108,9 @@
 
     <!-- Viewer -->
     <string name="viewer_info">%1$s points</string>
+    <string name="viewer_info_model">3D model · %1$s triangles</string>
+    <string name="viewer_show_points">Show points</string>
+    <string name="viewer_show_model">Show 3D model</string>
     <string name="viewer_reset">Reset view</string>
     <string name="viewer_toggle_colors">Toggle colour / height</string>
 
@@ -120,6 +124,10 @@
     <!-- Export -->
     <string name="export_dxf">Plan DXF (AutoCAD)</string>
     <string name="export_ply">Point cloud PLY</string>
+    <string name="export_model_glb">3D model GLB (colour)</string>
+    <string name="export_model_obj">3D model OBJ (colour)</string>
+    <string name="export_model_ply">3D model PLY (colour)</string>
+    <string name="export_no_model">This scan has no 3D model</string>
     <string name="export_pts">Point cloud PTS (ReCap)</string>
     <string name="export_obj">Walls 3D OBJ</string>
     <string name="export_csv">Measurements CSV</string>

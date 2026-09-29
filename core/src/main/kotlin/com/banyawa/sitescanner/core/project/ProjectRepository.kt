@@ -27,6 +27,9 @@ class ProjectRepository(private val rootDir: File, private val clock: () -> Long
 
     fun scanFile(projectId: String, scan: ScanInfo) = File(projectDir(projectId), scan.pointFile)
 
+    /** Where [scan]'s surface mesh is (or goes, see [meshFileName]); null without a mesh. */
+    fun meshFile(projectId: String, scan: ScanInfo): File? = scan.meshFile?.let { File(projectDir(projectId), it) }
+
     @Synchronized
     fun list(): List<Project> =
         (rootDir.listFiles() ?: emptyArray())
@@ -72,6 +75,8 @@ class ProjectRepository(private val rootDir: File, private val clock: () -> Long
         return ScanInfo(id = id, name = name, createdAt = createdAt, pointFile = "scan_$id.ply")
     }
 
+    fun meshFileName(scan: ScanInfo) = "scan_${scan.id}_mesh.ply"
+
     @Synchronized
     fun upsertScan(projectId: String, scan: ScanInfo): Project {
         val project = get(projectId) ?: error("Project $projectId not found")
@@ -84,6 +89,7 @@ class ProjectRepository(private val rootDir: File, private val clock: () -> Long
         val project = get(projectId) ?: return null
         val scan = project.scan(scanId) ?: return project
         scanFile(projectId, scan).delete()
+        meshFile(projectId, scan)?.delete()
         return update(project.copy(scans = project.scans.filterNot { it.id == scanId }))
     }
 

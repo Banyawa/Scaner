@@ -1,10 +1,12 @@
 package com.banyawa.sitescanner.data
 
+import com.banyawa.sitescanner.core.export.MeshPly
 import com.banyawa.sitescanner.core.export.Ply
 import com.banyawa.sitescanner.core.floorplan.Elevation
 import com.banyawa.sitescanner.core.floorplan.ElevationBuilder
 import com.banyawa.sitescanner.core.floorplan.FloorPlanExtractor
 import com.banyawa.sitescanner.core.floorplan.FloorPlanResult
+import com.banyawa.sitescanner.core.mesh.TriangleMesh
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.project.ProjectRepository
 import com.banyawa.sitescanner.core.project.ScanInfo
@@ -23,6 +25,8 @@ class ScanAnalysis(private val repository: ProjectRepository) {
     private var cachedCloud: PointCloud? = null
     private var cachedPlan: FloorPlanResult? = null
     private var cachedElevations: List<Elevation>? = null
+    private var cachedMeshKey: String? = null
+    private var cachedMesh: TriangleMesh? = null
 
     suspend fun cloud(projectId: String, scan: ScanInfo): PointCloud = mutex.withLock {
         val key = key(projectId, scan)
@@ -36,6 +40,20 @@ class ScanAnalysis(private val repository: ProjectRepository) {
             cachedKey = key
         }
         cachedCloud!!
+    }
+
+    /** The scan's colour surface model, or null when it has none (older scans, no depth). */
+    suspend fun mesh(projectId: String, scan: ScanInfo): TriangleMesh? {
+        if (!scan.hasMesh) return null
+        val file = repository.meshFile(projectId, scan) ?: return null
+        val key = "$projectId/${scan.id}/${file.lastModified()}"
+        return mutex.withLock {
+            if (key != cachedMeshKey) {
+                cachedMesh = withContext(Dispatchers.IO) { if (file.isFile) MeshPly.read(file) else null }
+                cachedMeshKey = key
+            }
+            cachedMesh
+        }
     }
 
     /** Floor plan with the user's door / window edits applied. */
