@@ -39,7 +39,7 @@ class ReconstructorTest {
     }
 
     /** Ray hit on the room box [0,4]×[0,2.7]×[-5,0]: distance and the surface colour. */
-    private fun hit(e: Vec3, d: Vec3): Pair<Float, Int> {
+    private fun hit(e: Vec3, d: Vec3, textured: Boolean = false): Pair<Float, Int> {
         var best = Float.MAX_VALUE
         var color = 0
         fun plane(o: Float, dd: Float, p: Float, rgb: Int) {
@@ -50,17 +50,22 @@ class ReconstructorTest {
         plane(e.x, d.x, 0f, 0xC03030); plane(e.x, d.x, 4f, 0xC03030)
         plane(e.z, d.z, 0f, 0xC03030); plane(e.z, d.z, -5f, 0xC03030)
         plane(e.y, d.y, 0f, 0x808080); plane(e.y, d.y, 2.7f, 0xF0F0F0)
-        return best to color
+        if (!textured || best == Float.MAX_VALUE) return best to color
+        // Wallpaper-like pattern (10–40 cm features) so stereo has something to match.
+        val p = e + d * best
+        val w = 0.5 + 0.5 * (sin(p.x * 31.0) * sin(p.y * 17.0 + p.z * 23.0) + 0.5 * sin(p.z * 43.0 + p.x * 11.0))
+        fun ch(shift: Int) = (((color shr shift) and 0xFF) * (0.55 + 0.45 * w)).toInt().coerceIn(0, 255)
+        return best to ((ch(16) shl 16) or (ch(8) shl 8) or ch(0))
     }
 
-    private fun render(pose: FloatArray, k: CameraIntrinsics, depthOut: ShortArray?, colorOut: IntArray?) {
+    private fun render(pose: FloatArray, k: CameraIntrinsics, depthOut: ShortArray?, colorOut: IntArray?, textured: Boolean = false) {
         val eye = Vec3(pose[12], pose[13], pose[14])
         for (v in 0 until k.height) for (u in 0 until k.width) {
             val nx = (u - k.cx) / k.fx
             val ny = (v - k.cy) / k.fy
             val dir = Vec3(pose[0] * nx - pose[4] * ny - pose[8], pose[1] * nx - pose[5] * ny - pose[9], pose[2] * nx - pose[6] * ny - pose[10])
             val len = dir.length()
-            val (t, rgb) = hit(eye, dir * (1f / len))
+            val (t, rgb) = hit(eye, dir * (1f / len), textured)
             val i = v * k.width + u
             if (depthOut != null) {
                 val mm = (t / len * 1000f).toInt()
@@ -78,7 +83,7 @@ class ReconstructorTest {
         return out.toByteArray()
     }
 
-    private fun record(frames: Int, withDepth: Boolean): Capture {
+    private fun record(frames: Int, withDepth: Boolean, textured: Boolean = false): Capture {
         val dir = tmp.newFolder("cap")
         val writer = CaptureWriter(dir)
         for (i in 0 until frames) {
@@ -87,7 +92,7 @@ class ReconstructorTest {
             val target = eye + Vec3(sin(a).toFloat(), -0.2f + 0.3f * sin(a * 5).toFloat(), cos(a).toFloat())
             val pose = lookAt(eye, target)
             val depth = if (withDepth) ShortArray(depthK.width * depthK.height).also { render(pose, depthK, it, null) } else null
-            val color = IntArray(imageK.width * imageK.height).also { render(pose, imageK, null, it) }
+            val color = IntArray(imageK.width * imageK.height).also { render(pose, imageK, null, it, textured) }
             writer.add(i * 100_000_000L, pose, jpeg(color, imageK.width, imageK.height), imageK, depth, if (withDepth) depthK else null, rawDepth = false)
         }
         writer.close(Manifest(device = "synthetic", floorY = 0f, depthSupported = withDepth))
@@ -129,12 +134,31 @@ class ReconstructorTest {
     }
 
     @Test
-    fun framesWithoutDepthGiveNoModelButDoNotFail() {
+    fun plainWallsWithoutDepthGiveNoModelButDoNotFail() {
+        // Flat colours: stereo finds nothing to match, and says so instead of guessing.
         val capture = record(5, withDepth = false)
         val result = Reconstructor(decoder).reconstruct(capture)
-        assertEquals(0, result.depthFrames)
         assertTrue(result.mesh.isEmpty())
         assertEquals(0, result.cloud.size)
+    }
+
+    @Test
+    fun texturedRoomWithoutDepthIsRebuiltFromTheImages() {
+        val capture = record(80, withDepth = false, textured = true)
+        assertTrue(capture.frames.none { it.hasDepth })
+        val result = Reconstructor(decoder).reconstruct(capture)
+        assertTrue("frames with estimated depth: ${result.depthFrames}", result.depthFrames > 60)
+        assertTrue("points: ${result.cloud.size}", result.cloud.size > 20_000)
+        assertTrue("triangles: ${result.mesh.triangleCount}", result.mesh.triangleCount > 5_000)
+        // What was rebuilt lies on the room's surfaces, not floating in the middle.
+        var onSurface = 0
+        val c = result.cloud
+        for (i in 0 until c.size) {
+            val x = c.xyz[i * 3]; val y = c.xyz[i * 3 + 1]; val z = c.xyz[i * 3 + 2]
+            val d = minOf(minOf(kotlin.math.abs(x), kotlin.math.abs(x - 4f)), minOf(kotlin.math.abs(z), kotlin.math.abs(z + 5f)), minOf(kotlin.math.abs(y), kotlin.math.abs(y - 2.7f)))
+            if (d < 0.08f) onSurface++
+        }
+        assertTrue("on surfaces: $onSurface of ${c.size}", onSurface > c.size * 0.85)
     }
 
     @Test

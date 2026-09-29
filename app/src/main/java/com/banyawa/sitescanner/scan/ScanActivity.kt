@@ -20,7 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.banyawa.sitescanner.R
 import com.banyawa.sitescanner.SiteScannerApp
-import com.banyawa.sitescanner.core.capture.Manifest
+import com.banyawa.sitescanner.core.capture.Manifest as CaptureManifest
 import com.banyawa.sitescanner.core.export.Ply
 import com.banyawa.sitescanner.core.project.CaptureMode
 import com.banyawa.sitescanner.core.project.ProjectRepository
@@ -121,7 +121,7 @@ class ScanActivity : ComponentActivity() {
         controller.recorder?.let { recorder ->
             controller.recorder = null
             Thread {
-                runCatching { recorder.close(Manifest()) }
+                runCatching { recorder.close(CaptureManifest()) }
                 recorder.dir.deleteRecursively()
             }.start()
         }
@@ -286,7 +286,7 @@ class ScanActivity : ComponentActivity() {
         controller.recorder = null
         return try {
             recorder.close(
-                Manifest(
+                CaptureManifest(
                     device = "${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})",
                     durationSec = controller.elapsedSec(),
                     floorY = result.floorY,

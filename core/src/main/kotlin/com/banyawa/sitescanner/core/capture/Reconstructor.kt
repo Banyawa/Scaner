@@ -60,6 +60,8 @@ data class ReconstructionOptions(
     val minPointWeight: Float = 0.5f,
     /** Fewer frames than this get every frame; more are thinned to about this many. */
     val maxFrames: Int = 600,
+    /** Without recorded depth, estimate it from the images (slower; needs a decoder). */
+    val estimateDepth: Boolean = true,
 )
 
 class ReconstructionResult(
@@ -83,9 +85,18 @@ fun interface ProgressListener {
 class Reconstructor(
     private val decoder: ImageDecoder?,
     private val options: ReconstructionOptions = ReconstructionOptions(),
-    private val depthSource: DepthSource = RecordedDepth,
+    private val depthSource: DepthSource? = null,
 ) {
+    /** The recorded depth when there is any; else depth estimated from the images. */
+    fun depthSourceFor(capture: Capture): DepthSource =
+        depthSource ?: when {
+            capture.frames.any { it.hasDepth } -> RecordedDepth
+            decoder != null && options.estimateDepth -> StereoDepthSource(decoder)
+            else -> RecordedDepth
+        }
+
     fun reconstruct(capture: Capture, progress: ProgressListener? = null, isCancelled: () -> Boolean = { false }): ReconstructionResult {
+        val depthSource = depthSourceFor(capture)
         val points = VoxelPointCloud(options.pointVoxelM, options.maxPoints)
         val surface = TsdfVolume(voxelSize = options.surfaceVoxelM, maxBlocks = options.surfaceBlocks)
         val pointFilter = DepthFilter(minConfidence = options.minRawConfidence, maxDepthM = options.maxDepthM, maxEdgeJump = options.maxEdgeJump)
