@@ -211,7 +211,7 @@ fun ProjectDetailScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { context.startActivity(ScanActivity.intent(context, projectId)) },
+                onClick = { context.startActivity(ScanActivity.newIntent(context, projectId)) },
                 icon = { Icon(Icons.Filled.DocumentScanner, contentDescription = null) },
                 text = { Text(stringResource(R.string.scan_new)) },
             )

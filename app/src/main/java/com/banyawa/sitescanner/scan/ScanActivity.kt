@@ -115,15 +115,18 @@ class ScanActivity : ComponentActivity() {
 
     private fun startAr() {
         if (session == null && !createSession()) return
+        val current = session ?: return
         try {
-            session?.resume()
+            current.resume()
         } catch (e: CameraNotAvailableException) {
             showError(R.string.error_camera_unavailable, canRetry = true)
-            session?.close()
-            session = null
             renderer.session = null
+            current.close()
+            session = null
             return
         }
+        // Hand the session to the GL thread only once it is running.
+        renderer.session = current
         surfaceView.onResume()
         rotationHelper.onResume()
     }
@@ -163,7 +166,6 @@ class ScanActivity : ComponentActivity() {
 
             session = newSession
             renderer.depthEnabled = depth
-            renderer.session = newSession
             controller.updateState { it.copy(arReady = true, depthSupported = depth, errorRes = null) }
             return true
         } catch (e: UnavailableUserDeclinedInstallationException) {
@@ -231,7 +233,7 @@ class ScanActivity : ComponentActivity() {
         private const val MIN_WEIGHT_DEPTH = 0.5f
         private const val MIN_WEIGHT_FEATURES = 0.2f
 
-        fun intent(context: Context, projectId: String): Intent =
+        fun newIntent(context: Context, projectId: String): Intent =
             Intent(context, ScanActivity::class.java).putExtra(EXTRA_PROJECT_ID, projectId)
     }
 }
