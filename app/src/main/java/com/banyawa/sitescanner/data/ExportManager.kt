@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.annotation.StringRes
 import androidx.core.content.FileProvider
 import com.banyawa.sitescanner.R
+import com.banyawa.sitescanner.core.capture.CaptureZip
 import com.banyawa.sitescanner.core.export.ElevationDxf
 import com.banyawa.sitescanner.core.export.FloorPlanDxf
 import com.banyawa.sitescanner.core.export.Glb
@@ -23,8 +24,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** [needsMesh]: only for scans with a colour surface model. */
-enum class ExportFormat(val extension: String, val mimeType: String, @StringRes val label: Int, val needsMesh: Boolean = false) {
+/** [needsMesh]: only for scans with a colour surface model; [needsCapture]: only with a recording. */
+enum class ExportFormat(
+    val extension: String,
+    val mimeType: String,
+    @StringRes val label: Int,
+    val needsMesh: Boolean = false,
+    val needsCapture: Boolean = false,
+) {
     GLB_MODEL("glb", "model/gltf-binary", R.string.export_model_glb, needsMesh = true),
     OBJ_MODEL("obj", "text/plain", R.string.export_model_obj, needsMesh = true),
     PLY_MODEL("ply", "application/octet-stream", R.string.export_model_ply, needsMesh = true),
@@ -35,6 +42,7 @@ enum class ExportFormat(val extension: String, val mimeType: String, @StringRes 
     OBJ_WALLS("obj", "text/plain", R.string.export_obj),
     CSV_MEASUREMENTS("csv", "text/csv", R.string.export_csv),
     CSV_OPENINGS("csv", "text/csv", R.string.export_openings_csv),
+    CAPTURE_ZIP("zip", "application/zip", R.string.export_capture_zip, needsCapture = true),
 }
 
 /**
@@ -47,6 +55,7 @@ enum class ExportFormat(val extension: String, val mimeType: String, @StringRes 
 class ExportManager(private val context: Context, private val analysis: ScanAnalysis) {
 
     suspend fun export(project: Project, scan: ScanInfo, format: ExportFormat): File {
+        if (format == ExportFormat.CAPTURE_ZIP) return exportCapture(project, scan)
         val result = analysis.floorPlan(project.id, scan)
         val alignment = result.plan.alignment
         val elevations = when (format) {
@@ -97,6 +106,21 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
             }
             file
         }
+    }
+
+    /**
+     * The recorded walk-through as one zip: the frames as recorded plus the camera poses in
+     * the formats PC photogrammetry tools read (COLMAP, nerfstudio), for a photo-quality model.
+     */
+    private suspend fun exportCapture(project: Project, scan: ScanInfo): File = withContext(Dispatchers.IO) {
+        val captureDir = analysis.repository.captureDir(project.id, scan)?.takeIf { it.isDirectory }
+            ?: throw IllegalStateException(context.getString(R.string.export_no_capture))
+        val dir = File(context.cacheDir, "exports").apply { mkdirs() }
+        dir.listFiles()?.forEach { it.deleteRecursively() }
+        val file = File(dir, "${safeName(project.name)}_${safeName(scan.name)}_recording.zip")
+        val extra = PoseExportFiles.forCapture(captureDir)
+        file.outputStream().use { CaptureZip.write(captureDir, it, extra) }
+        file
     }
 
     private suspend fun mesh(project: Project, scan: ScanInfo) =

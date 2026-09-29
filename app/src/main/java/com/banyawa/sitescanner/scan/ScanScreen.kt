@@ -93,7 +93,10 @@ fun ScanScreen(
             onExit()
         }
     }
-    BackHandler(enabled = !state.saving) { requestExit() }
+    // While the model is generated the scan is already saved: leaving lets it finish in the background.
+    BackHandler(enabled = !state.saving || state.buildProgress != null) {
+        if (state.buildProgress != null) onExit() else requestExit()
+    }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(factory = { surfaceView }, modifier = Modifier.fillMaxSize())
@@ -120,7 +123,7 @@ fun ScanScreen(
         state.errorRes?.let { res ->
             ErrorOverlay(stringResource(res), state.errorDetail, state.canRetry, onRetry, onExit)
         }
-        if (state.saving) SavingOverlay()
+        if (state.saving) SavingOverlay(state.buildProgress, onBackground = onExit)
     }
 
     if (showSaveDialog) {
@@ -371,12 +374,27 @@ private fun ErrorOverlay(message: String, detail: String?, canRetry: Boolean, on
 }
 
 @Composable
-private fun SavingOverlay() {
+private fun SavingOverlay(buildProgress: Float?, onBackground: () -> Unit) {
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator()
-            Spacer(Modifier.height(16.dp))
-            Text(stringResource(R.string.scan_saving), color = Color.White)
+        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
+            if (buildProgress == null) {
+                CircularProgressIndicator()
+                Spacer(Modifier.height(16.dp))
+                Text(stringResource(R.string.scan_saving), color = Color.White)
+            } else {
+                CircularProgressIndicator(progress = { buildProgress })
+                Spacer(Modifier.height(16.dp))
+                Text(stringResource(R.string.scan_building_model, (buildProgress * 100).roundToInt()), color = Color.White)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(R.string.scan_building_model_hint),
+                    color = Color.White.copy(alpha = 0.7f),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(16.dp))
+                TextButton(onClick = onBackground) { Text(stringResource(R.string.scan_build_in_background), color = Color.White) }
+            }
         }
     }
 }

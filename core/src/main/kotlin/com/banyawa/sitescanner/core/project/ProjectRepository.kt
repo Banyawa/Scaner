@@ -30,6 +30,22 @@ class ProjectRepository(private val rootDir: File, private val clock: () -> Long
     /** Where [scan]'s surface mesh is (or goes, see [meshFileName]); null without a mesh. */
     fun meshFile(projectId: String, scan: ScanInfo): File? = scan.meshFile?.let { File(projectDir(projectId), it) }
 
+    /** The recorded walk-through of [scan]; null when none was kept. */
+    fun captureDir(projectId: String, scan: ScanInfo): File? = scan.captureDir?.let { File(projectDir(projectId), it) }
+
+    fun captureDirName(scan: ScanInfo) = "capture_${scan.id}"
+
+    /** A folder for a recording whose scan does not exist yet; renamed to [captureDirName] on saving. */
+    fun newCaptureDir(projectId: String): File = File(projectDir(projectId), "$TEMP_CAPTURE_PREFIX${newId()}")
+
+    /** Deletes recordings of scans that were never saved (the app was left or died mid-scan). */
+    fun dropAbandonedCaptures(projectId: String, olderThanMs: Long = 60 * 60 * 1000L) {
+        val cutoff = clock() - olderThanMs
+        projectDir(projectId).listFiles()
+            ?.filter { it.isDirectory && it.name.startsWith(TEMP_CAPTURE_PREFIX) && it.lastModified() < cutoff }
+            ?.forEach { it.deleteRecursively() }
+    }
+
     @Synchronized
     fun list(): List<Project> =
         (rootDir.listFiles() ?: emptyArray())
@@ -90,6 +106,7 @@ class ProjectRepository(private val rootDir: File, private val clock: () -> Long
         val scan = project.scan(scanId) ?: return project
         scanFile(projectId, scan).delete()
         meshFile(projectId, scan)?.delete()
+        captureDir(projectId, scan)?.deleteRecursively()
         return update(project.copy(scans = project.scans.filterNot { it.id == scanId }))
     }
 
@@ -115,5 +132,6 @@ class ProjectRepository(private val rootDir: File, private val clock: () -> Long
 
     companion object {
         const val PROJECT_FILE = "project.json"
+        private const val TEMP_CAPTURE_PREFIX = "capture_tmp_"
     }
 }

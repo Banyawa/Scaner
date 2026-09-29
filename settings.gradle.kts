@@ -24,3 +24,4 @@ rootProject.name = "SiteScanner"
 
 include(":core")
 include(":app")
+include(":cli")

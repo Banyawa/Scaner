@@ -27,6 +27,15 @@ jobs:
       - name: Core unit tests
         run: ./gradlew :core:test --stacktrace
 
+      - name: Desktop reconstruct tool
+        run: ./gradlew :cli:jar --stacktrace
+
+      - name: Upload reconstruct tool
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconstruct-tool
+          path: cli/build/libs/reconstruct.jar
+
       - name: Signing key
         env:
           SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}

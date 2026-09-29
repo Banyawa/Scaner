@@ -215,6 +215,9 @@ class FrameCapture {
         }
     }
 
+    /** The camera image of [frame] with its intrinsics, for recording frames that get no depth. */
+    fun colorOf(frame: Frame, camera: Camera): Pair<YuvFrame, CameraIntrinsics>? = captureColor(frame, camera)
+
     private fun captureColor(frame: Frame, camera: Camera): Pair<YuvFrame, CameraIntrinsics>? {
         val image: Image = try {
             frame.acquireCameraImage()

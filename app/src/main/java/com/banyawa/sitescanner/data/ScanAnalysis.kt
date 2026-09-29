@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
  * Loads scan point clouds and computes floor plans and elevations, caching the most recent
  * results so the viewer, the plan screen and exports of the same scan don't redo the work.
  */
-class ScanAnalysis(private val repository: ProjectRepository) {
+class ScanAnalysis(val repository: ProjectRepository) {
     private val mutex = Mutex()
     private var cachedKey: String? = null
     private var cachedCloud: PointCloud? = null

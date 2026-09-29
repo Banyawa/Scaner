@@ -164,6 +164,7 @@ class ScanRenderer(
             collectDepth(frame, camera)
             if (controller.depthFrames > 0 || controller.recordingMs() < NO_DEPTH_FALLBACK_MS) return
         }
+        if (!depthEnabled) capture.colorOf(frame, camera)?.let { controller.recordColor(frame.timestamp, pose, it) }
         integrateFeaturePoints(frame)
     }
 
@@ -207,7 +208,7 @@ class ScanRenderer(
         }
         val raw = controller.depthYield.fraction()?.let { " · raw kept ${(it * 100).roundToInt()}%" }.orEmpty()
         val tracking = if (camera.trackingState == TrackingState.TRACKING) "" else " · ${camera.trackingState}/${camera.trackingFailureReason}"
-        val surface = if (controller.surfaceBlocks > 0) " · model ${controller.surfaceBlocks} blocks" else ""
+        val surface = if (controller.recordedFrames > 0) " · rec ${controller.recordedFrames}" else ""
         val lag = if (depthEnabled) " · lag ${capture.lastLagMs.roundToInt()}ms" + (if (capture.matchesTimestamps) "" else " (unmatched)") else ""
         return "${Build.MANUFACTURER} ${Build.MODEL} · $source · ${controller.depthFrames + controller.featureFrames} frames · " +
             "last +${controller.lastAccepted}$raw$surface$lag$tracking"

@@ -27,3 +27,6 @@ Thumbs.db
 *.keystore
 *.p12
 keystore.properties
+
+# Claude Code agent worktrees
+.claude/worktrees/

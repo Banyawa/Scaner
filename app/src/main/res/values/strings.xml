@@ -57,6 +57,9 @@
     <string name="scans_empty_body">Tap Scan, then walk slowly along the walls keeping the phone 1–3 m from surfaces.</string>
     <string name="scan_summary">%1$s points · %2$d measurements · %3$s</string>
     <string name="scan_model_summary">Colour 3D model · %1$s triangles</string>
+    <string name="scan_recording_summary">Recording kept · %1$d frames</string>
+    <string name="scan_no_model_yet">No model yet. Tap Generate 3D model.</string>
+    <string name="action_generate_model">Generate 3D model</string>
     <string name="scan_missing">Scan not found</string>
     <string name="scan_delete_title">Delete scan?</string>
     <string name="scan_delete_message">\"%1$s\" will be permanently deleted.</string>
@@ -87,6 +90,9 @@
     <string name="scan_name">Scan name</string>
     <string name="scan_default_name">Scan %1$s</string>
     <string name="scan_saving">Saving scan…</string>
+    <string name="scan_building_model">Generating 3D model… %1$d%%</string>
+    <string name="scan_building_model_hint">Building the model from the recording; this takes about a minute.</string>
+    <string name="scan_build_in_background">Continue in background</string>
     <string name="scan_discard_title">Discard this scan?</string>
     <string name="scan_discard_message">Unsaved points and measurements will be lost.</string>
     <string name="scan_keep_scanning">Keep scanning</string>
@@ -128,6 +134,8 @@
     <string name="export_model_obj">3D model OBJ (colour)</string>
     <string name="export_model_ply">3D model PLY (colour)</string>
     <string name="export_no_model">This scan has no 3D model</string>
+    <string name="export_capture_zip">Recording ZIP (for PC / support)</string>
+    <string name="export_no_capture">This scan has no recording</string>
     <string name="export_pts">Point cloud PTS (ReCap)</string>
     <string name="export_obj">Walls 3D OBJ</string>
     <string name="export_csv">Measurements CSV</string>

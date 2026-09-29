@@ -19,7 +19,7 @@ class DepthFrame(
     val confidence: ByteArray?,
     val intrinsics: CameraIntrinsics,
     val cameraToWorld: FloatArray,
-    val color: YuvFrame? = null,
+    val color: ColorImage? = null,
     val colorIntrinsics: CameraIntrinsics? = null,
     val timestampNs: Long = 0L,
 ) {

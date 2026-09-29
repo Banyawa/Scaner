@@ -3,12 +3,12 @@ package com.banyawa.sitescanner.scan
 import android.os.SystemClock
 import android.util.Log
 import androidx.annotation.StringRes
-import com.banyawa.sitescanner.core.mesh.TriangleMesh
-import com.banyawa.sitescanner.core.mesh.TsdfVolume
+import com.banyawa.sitescanner.core.pointcloud.CameraIntrinsics
 import com.banyawa.sitescanner.core.pointcloud.DepthFilter
 import com.banyawa.sitescanner.core.pointcloud.DepthYield
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.pointcloud.ScanIntegrator
+import com.banyawa.sitescanner.core.pointcloud.YuvFrame
 import com.banyawa.sitescanner.core.project.Measurement
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +41,8 @@ data class ScanUiState(
     val measurementCount: Int = 0,
     val labels: List<ScreenLabel> = emptyList(),
     val saving: Boolean = false,
+    /** 0..1 while the 3D model is generated from the recording after saving; null before. */
+    val buildProgress: Float? = null,
     /** Phone, depth source and frame counts: what a screenshot needs for troubleshooting. */
     val diagnostics: String = "",
 )
@@ -72,13 +74,9 @@ class ScanController {
     /** Share of raw depth pixels kept, for switching to smoothed depth when it is too low. */
     val depthYield = DepthYield()
 
-    /** Colour surface model, fused on the worker thread only. */
-    private val surface = TsdfVolume(maxBlocks = surfaceBlockBudget())
-
-    /** Blocks of the surface model so far (each 16 cm cube near a surface). */
+    /** The walk-through on disk, set by the activity once recording starts. */
     @Volatile
-    var surfaceBlocks = 0
-        private set
+    var recorder: CaptureRecorder? = null
 
     @Volatile
     var depthFrames = 0
@@ -135,31 +133,35 @@ class ScanController {
         recordedMs + live
     }
 
-    /** Raw depth frames also report their yield, which decides whether to keep using raw depth. */
-    fun submitDepth(depth: CapturedDepth) = submit {
-        val before = integrator.voxelCount
-        depth.points?.let { points ->
-            val kept = integrator.integrate(points)
-            if (depth.raw) depthYield.add(kept, points.width * points.height)
+    /**
+     * Fuses a keyframe's depth into the live points (the on-screen coverage) and records
+     * the frame. Raw depth frames also report their yield, which decides whether to keep
+     * using raw depth.
+     */
+    fun submitDepth(depth: CapturedDepth) {
+        val frame = depth.points ?: depth.surface
+        val color = frame?.color as? YuvFrame
+        val k = frame?.colorIntrinsics
+        if (frame != null && color != null && k != null) {
+            recorder?.add(frame.timestampNs, frame.cameraToWorld, color to k, depth.points, depth.surface, depth.raw)
         }
-        lastAccepted = integrator.voxelCount - before
-        depthFrames++
-        depth.surface?.let {
-            surface.integrate(it, DepthFilter(minConfidence = 0, maxEdgeJump = MAX_EDGE_JUMP))
-            surfaceBlocks = surface.blockCount
+        submit {
+            val before = integrator.voxelCount
+            depth.points?.let { points ->
+                val kept = integrator.integrate(points)
+                if (depth.raw) depthYield.add(kept, points.width * points.height)
+            }
+            lastAccepted = integrator.voxelCount - before
+            depthFrames++
         }
     }
 
-    /**
-     * The fused surface as a mesh, loose specks removed; empty without depth. Runs on the
-     * fusion worker after any queued frames. Call off the main thread.
-     */
-    fun extractSurface(): TriangleMesh =
-        try {
-            worker.submit<TriangleMesh> { surface.extractMesh().withoutSmallParts() }.get()
-        } catch (e: RejectedExecutionException) {
-            TriangleMesh.EMPTY
-        }
+    /** Records a keyframe of a phone without depth: its image and pose still make the model on a PC. */
+    fun recordColor(timestampNs: Long, cameraToWorld: FloatArray, color: Pair<YuvFrame, CameraIntrinsics>) {
+        recorder?.add(timestampNs, cameraToWorld, color, null, null, raw = false)
+    }
+
+    val recordedFrames: Int get() = recorder?.frameCount ?: 0
 
     fun submitFeaturePoints(xyzc: FloatArray, count: Int) = submit {
         val before = integrator.voxelCount
@@ -229,10 +231,6 @@ class ScanController {
 
         /** Depth jumping by more than this share to a neighbouring pixel marks an edge's flying pixels. */
         private const val MAX_EDGE_JUMP = 0.05f
-
-        /** A quarter of the heap for the surface model, at about 3.5 KB per block. */
-        private fun surfaceBlockBudget(): Int =
-            (Runtime.getRuntime().maxMemory() / 4 / 3_600).toInt().coerceIn(4_000, 40_000)
 
         private const val PREVIEW_INTERVAL_MS = 400L
 

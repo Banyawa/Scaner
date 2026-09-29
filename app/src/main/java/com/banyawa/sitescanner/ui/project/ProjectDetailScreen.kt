@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Architecture
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
@@ -64,6 +65,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -116,6 +118,19 @@ class ProjectDetailViewModel(private val projectId: String, private val app: Sit
 
     private val _events = MutableSharedFlow<ExportEvent>(extraBufferCapacity = 4)
     val events: SharedFlow<ExportEvent> = _events.asSharedFlow()
+
+    /** Progress (0..1) of the 3D models being generated, by scan id. */
+    val building: StateFlow<Map<String, Float>> = app.modelBuilder.progress
+
+    /** Generates the scan's model from its recording again (after an update, or a failed first try). */
+    fun rebuild(scan: ScanInfo) {
+        if (building.value.containsKey(scan.id)) return
+        viewModelScope.launch {
+            runCatching { app.modelBuilder.build(projectId, scan) }
+                .onFailure { _events.emit(ExportEvent.Failed(it.message ?: it.javaClass.simpleName)) }
+            _project.value = withContext(Dispatchers.IO) { repository.get(projectId) }
+        }
+    }
 
     fun refresh() {
         viewModelScope.launch {
@@ -178,6 +193,7 @@ fun ProjectDetailScreen(
     val project by vm.project.collectAsStateWithLifecycle()
     val loaded by vm.loaded.collectAsStateWithLifecycle()
     val exporting by vm.exporting.collectAsStateWithLifecycle()
+    val building by vm.building.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refresh() }
 
@@ -248,6 +264,8 @@ fun ProjectDetailScreen(
                         ScanCard(
                             scan = scan,
                             exporting = exporting,
+                            building = building[scan.id],
+                            onRebuild = { vm.rebuild(scan) },
                             onView = { onOpenViewer(scan.id) },
                             onPlan = { onOpenPlan(scan.id) },
                             onExport = { vm.export(scan, it) },
@@ -372,6 +390,8 @@ private fun ProjectHeader(project: Project, arSupported: Boolean?) {
 private fun ScanCard(
     scan: ScanInfo,
     exporting: Boolean,
+    building: Float?,
+    onRebuild: () -> Unit,
     onView: () -> Unit,
     onPlan: () -> Unit,
     onExport: (ExportFormat) -> Unit,
@@ -429,12 +449,23 @@ private fun ScanCard(
                 }
             }
 
-            if (scan.pointCount == 0) {
+            if (building != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.scan_building_model, (building * 100).roundToInt()), style = MaterialTheme.typography.bodySmall)
+                LinearProgressIndicator(progress = { building }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+            } else if (scan.pointCount == 0) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    stringResource(R.string.scan_no_points),
+                    stringResource(if (scan.hasCapture) R.string.scan_no_model_yet else R.string.scan_no_points),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
+                )
+            }
+            if (scan.hasCapture) {
+                Text(
+                    stringResource(R.string.scan_recording_summary, scan.captureFrames),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Spacer(Modifier.height(12.dp))
@@ -449,6 +480,13 @@ private fun ScanCard(
                     Spacer(Modifier.width(6.dp))
                     Text(stringResource(R.string.action_floor_plan))
                 }
+                if (scan.hasCapture) {
+                    OutlinedButton(onClick = onRebuild, enabled = building == null) {
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.action_generate_model))
+                    }
+                }
                 Box {
                     OutlinedButton(onClick = { menuOpen = true }, enabled = !exporting) {
                         Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -456,7 +494,7 @@ private fun ScanCard(
                         Text(stringResource(R.string.action_export))
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        ExportFormat.entries.filter { !it.needsMesh || scan.hasMesh }.forEach { format ->
+                        ExportFormat.entries.filter { (!it.needsMesh || scan.hasMesh) && (!it.needsCapture || scan.hasCapture) }.forEach { format ->
                             DropdownMenuItem(
                                 text = { Text(stringResource(format.label)) },
                                 onClick = {

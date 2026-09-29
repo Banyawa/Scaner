@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.opengl.GLSurfaceView
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
@@ -19,7 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.banyawa.sitescanner.R
 import com.banyawa.sitescanner.SiteScannerApp
-import com.banyawa.sitescanner.core.export.MeshPly
+import com.banyawa.sitescanner.core.capture.Manifest
 import com.banyawa.sitescanner.core.export.Ply
 import com.banyawa.sitescanner.core.project.CaptureMode
 import com.banyawa.sitescanner.core.project.ProjectRepository
@@ -37,6 +38,7 @@ import com.google.ar.core.exceptions.UnavailableUserDeclinedInstallationExceptio
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /**
  * Full-screen AR scanning for one project. Owns the ARCore session lifecycle; the GL
@@ -65,6 +67,7 @@ class ScanActivity : ComponentActivity() {
         }
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        Thread { (application as SiteScannerApp).repository.dropAbandonedCaptures(projectId) }.start()
 
         rotationHelper = DisplayRotationHelper(this)
         renderer = ScanRenderer(controller, rotationHelper)
@@ -82,7 +85,7 @@ class ScanActivity : ComponentActivity() {
                 ScanScreen(
                     state = state,
                     surfaceView = surfaceView,
-                    onToggleRecording = { controller.setRecording(!controller.recording) },
+                    onToggleRecording = ::toggleRecording,
                     onAddPoint = { controller.post(ScanAction.AddPoint) },
                     onUndo = { controller.post(ScanAction.Undo) },
                     onSave = ::save,
@@ -114,6 +117,14 @@ class ScanActivity : ComponentActivity() {
         session?.close()
         session = null
         controller.shutdown()
+        // Left without saving: the recording is of no use to anyone.
+        controller.recorder?.let { recorder ->
+            controller.recorder = null
+            Thread {
+                runCatching { recorder.close(Manifest()) }
+                recorder.dir.deleteRecursively()
+            }.start()
+        }
     }
 
     private fun startAr() {
@@ -192,14 +203,35 @@ class ScanActivity : ComponentActivity() {
         controller.updateState { it.copy(errorRes = messageRes, errorDetail = detail, canRetry = canRetry) }
     }
 
+    /** Recording starts writing the walk-through to disk the first time it is switched on. */
+    private fun toggleRecording() {
+        val on = !controller.recording
+        if (on && controller.recorder == null) {
+            val dir = (application as SiteScannerApp).repository.newCaptureDir(projectId)
+            controller.recorder = try {
+                CaptureRecorder(dir)
+            } catch (e: Exception) {
+                Log.e(TAG, "Recording to $dir failed", e)
+                null
+            }
+        }
+        controller.setRecording(on)
+    }
+
     private fun save(name: String) {
         controller.setRecording(false)
         controller.updateState { it.copy(saving = true) }
         controller.post(ScanAction.Finish { result -> runOnUiThread { persist(name, result) } })
     }
 
+    /**
+     * Saves the live points right away, then generates the point cloud and colour 3D model
+     * from the recording (all frames, both passes) while the overlay shows the progress.
+     * A failed or empty generation leaves the live points in place.
+     */
     private fun persist(name: String, result: SessionResult) {
-        val repository = (application as SiteScannerApp).repository
+        val app = application as SiteScannerApp
+        val repository = app.repository
         val depth = renderer.depthEnabled && controller.depthFrames > 0
         lifecycleScope.launch {
             val outcome = withContext(Dispatchers.IO) {
@@ -219,40 +251,61 @@ class ScanActivity : ComponentActivity() {
                         measurements = result.measurements,
                     )
                     Ply.write(cloud, repository.scanFile(projectId, scan))
-                    scan = withSurfaceModel(repository, scan)
+                    scan = withRecording(repository, scan, result)
                     repository.upsertScan(projectId, scan)
+                    scan
                 }
             }
-            outcome.onSuccess {
-                setResult(RESULT_OK)
-                finish()
-            }.onFailure { e ->
+            val scan = outcome.getOrElse { e ->
                 Log.e(TAG, "Saving scan failed", e)
                 controller.updateState { it.copy(saving = false) }
                 Toast.makeText(this@ScanActivity, getString(R.string.error_save_failed, e.message ?: ""), Toast.LENGTH_LONG).show()
+                return@launch
             }
+            if (scan.hasCapture) {
+                controller.updateState { it.copy(buildProgress = 0f) }
+                val watching = launch {
+                    app.modelBuilder.progress.collect { p -> p[scan.id]?.let { f -> controller.updateState { it.copy(buildProgress = f) } } }
+                }
+                try {
+                    app.modelBuilder.build(projectId, scan)
+                } catch (t: Throwable) {
+                    Log.e(TAG, "Generating the model failed; keeping the live points", t)
+                } finally {
+                    watching.cancel()
+                }
+            }
+            setResult(RESULT_OK)
+            finish()
         }
     }
 
-    /**
-     * Saves the colour surface model next to the points. Meshing is best effort: if it fails
-     * (e.g. out of memory on a huge scan) the scan is still saved with its points.
-     */
-    private fun withSurfaceModel(repository: ProjectRepository, scan: ScanInfo): ScanInfo =
-        try {
-            val mesh = controller.extractSurface()
-            if (mesh.isEmpty()) {
+    /** Closes the recording and files it under the scan; a recording without frames is dropped. */
+    private fun withRecording(repository: ProjectRepository, scan: ScanInfo, result: SessionResult): ScanInfo {
+        val recorder = controller.recorder ?: return scan
+        controller.recorder = null
+        return try {
+            recorder.close(
+                Manifest(
+                    device = "${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE})",
+                    durationSec = controller.elapsedSec(),
+                    floorY = result.floorY,
+                    depthSupported = renderer.depthEnabled,
+                    notes = controller.state.value.diagnostics,
+                ),
+            )
+            val target = File(recorder.dir.parentFile, repository.captureDirName(scan))
+            if (recorder.frameCount == 0 || !recorder.dir.renameTo(target)) {
+                recorder.dir.deleteRecursively()
                 scan
             } else {
-                val meshed = scan.copy(meshFile = repository.meshFileName(scan), meshTriangles = mesh.triangleCount)
-                MeshPly.write(mesh, repository.meshFile(projectId, meshed)!!)
-                Log.i(TAG, "Saved surface model: ${mesh.triangleCount} triangles")
-                meshed
+                scan.copy(captureDir = target.name, captureFrames = recorder.frameCount)
             }
         } catch (t: Throwable) {
-            Log.e(TAG, "Surface model not saved", t)
+            Log.e(TAG, "Recording not kept", t)
             scan
         }
+    }
 
     companion object {
         private const val TAG = "ScanActivity"

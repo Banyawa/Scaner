@@ -42,11 +42,15 @@ data class ScanInfo(
     val measurements: List<Measurement> = emptyList(),
     /** Doors / windows as reviewed by the user; null = use automatic detection. */
     val openingEdits: OpeningEdits? = null,
-    /** Colour surface mesh fused from depth while scanning (PLY in the project folder), if any. */
+    /** Colour surface mesh of the scan (PLY in the project folder), if any. */
     val meshFile: String? = null,
     val meshTriangles: Int = 0,
+    /** The recorded walk-through (folder in the project folder) the model is generated from, if kept. */
+    val captureDir: String? = null,
+    val captureFrames: Int = 0,
 ) {
     val hasMesh: Boolean get() = meshFile != null && meshTriangles > 0
+    val hasCapture: Boolean get() = captureDir != null && captureFrames > 0
 }
 
 /** A site's position on the map (WGS84 degrees), from GPS or picked by hand. */
