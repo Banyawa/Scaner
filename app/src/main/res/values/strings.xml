@@ -135,6 +135,7 @@
     <string name="export_model_ply">3D model PLY (colour)</string>
     <string name="export_no_model">This scan has no 3D model</string>
     <string name="export_capture_zip">Recording ZIP (for PC / support)</string>
+    <string name="export_capture_zip_small">Recording ZIP, small (≤ 20 MB, for support)</string>
     <string name="export_no_capture">This scan has no recording</string>
     <string name="export_pts">Point cloud PTS (ReCap)</string>
     <string name="export_obj">Walls 3D OBJ</string>

@@ -6,6 +6,7 @@ import androidx.annotation.StringRes
 import com.banyawa.sitescanner.core.pointcloud.CameraIntrinsics
 import com.banyawa.sitescanner.core.pointcloud.DepthFilter
 import com.banyawa.sitescanner.core.pointcloud.DepthYield
+import com.banyawa.sitescanner.core.pointcloud.KeyframeSelector
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.pointcloud.ScanIntegrator
 import com.banyawa.sitescanner.core.pointcloud.YuvFrame
@@ -78,6 +79,9 @@ class ScanController {
     @Volatile
     var recorder: CaptureRecorder? = null
 
+    /** Recorded frames are spaced wider than live keyframes: enough overlap, a third of the storage. */
+    private val recordKeyframes = KeyframeSelector(minTranslationM = 0.06f, minRotationDeg = 5f, minIntervalMs = 200L, maxIntervalMs = 2000L)
+
     @Volatile
     var depthFrames = 0
         private set
@@ -142,7 +146,7 @@ class ScanController {
         val frame = depth.points ?: depth.surface
         val color = frame?.color as? YuvFrame
         val k = frame?.colorIntrinsics
-        if (frame != null && color != null && k != null) {
+        if (frame != null && color != null && k != null && recordKeyframes.shouldCapture(frame.cameraToWorld, SystemClock.elapsedRealtime())) {
             recorder?.add(frame.timestampNs, frame.cameraToWorld, color to k, depth.points, depth.surface, depth.raw)
         }
         submit {
@@ -158,7 +162,9 @@ class ScanController {
 
     /** Records a keyframe of a phone without depth: its image and pose still make the model on a PC. */
     fun recordColor(timestampNs: Long, cameraToWorld: FloatArray, color: Pair<YuvFrame, CameraIntrinsics>) {
-        recorder?.add(timestampNs, cameraToWorld, color, null, null, raw = false)
+        if (recordKeyframes.shouldCapture(cameraToWorld, SystemClock.elapsedRealtime())) {
+            recorder?.add(timestampNs, cameraToWorld, color, null, null, raw = false)
+        }
     }
 
     val recordedFrames: Int get() = recorder?.frameCount ?: 0

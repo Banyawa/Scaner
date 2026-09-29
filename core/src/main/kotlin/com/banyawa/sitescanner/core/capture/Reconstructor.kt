@@ -62,6 +62,8 @@ data class ReconstructionOptions(
     val maxFrames: Int = 600,
     /** Without recorded depth, estimate it from the images (slower; needs a decoder). */
     val estimateDepth: Boolean = true,
+    /** Frames given estimated depth at most: stereo costs about half a second a frame on a phone. */
+    val maxStereoFrames: Int = 150,
 )
 
 class ReconstructionResult(
@@ -103,7 +105,7 @@ class Reconstructor(
         val surfaceFilter = DepthFilter(minConfidence = 0, maxDepthM = options.maxDepthM, maxEdgeJump = options.maxEdgeJump)
         val color = ColorLookup(capture, decoder)
 
-        val indices = thin(capture.frames.size, options.maxFrames)
+        val indices = thin(capture.frames.size, if (depthSource is StereoDepthSource) options.maxStereoFrames else options.maxFrames)
         var depthFrames = 0
         for ((n, i) in indices.withIndex()) {
             if (isCancelled()) break

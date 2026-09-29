@@ -2,6 +2,7 @@ package com.banyawa.sitescanner.data
 
 import android.util.Log
 import com.banyawa.sitescanner.core.capture.Capture
+import com.banyawa.sitescanner.core.capture.CaptureFrame
 import com.banyawa.sitescanner.core.export.Colmap
 import com.banyawa.sitescanner.core.export.Nerfstudio
 import java.io.File
@@ -13,13 +14,14 @@ import java.io.File
  * is a ready dataset without a second copy of the images.
  */
 object PoseExportFiles {
-    fun forCapture(captureDir: File): Map<String, ByteArray> {
+    fun forCapture(captureDir: File, frames: List<CaptureFrame>? = null): Map<String, ByteArray> {
         val temp = File(captureDir.parentFile, "${captureDir.name}_poses").apply {
             deleteRecursively()
             mkdirs()
         }
         return try {
-            val capture = Capture.open(captureDir)
+            val full = Capture.open(captureDir)
+            val capture = if (frames == null) full else Capture(full.dir, full.manifest, frames)
             Colmap.write(capture, temp, copyImages = false, imageDir = Capture.FRAME_DIR)
             Nerfstudio.write(capture, temp, copyImages = false, imageDir = Capture.FRAME_DIR)
             temp.walkTopDown().filter { it.isFile }

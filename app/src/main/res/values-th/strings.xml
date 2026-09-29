@@ -133,6 +133,7 @@
     <string name="export_model_ply">โมเดล 3D สีจริง PLY</string>
     <string name="export_no_model">สแกนนี้ไม่มีโมเดล 3D</string>
     <string name="export_capture_zip">วิดีโอที่อัดไว้ ZIP (ส่งเข้าคอม / ส่งให้ช่วยดู)</string>
+    <string name="export_capture_zip_small">วิดีโอย่อ ZIP (ไม่เกิน 20 MB ส่งให้ช่วยดู)</string>
     <string name="export_no_capture">สแกนนี้ไม่มีวิดีโอที่อัดไว้</string>
     <string name="export_pts">Point cloud PTS (ReCap)</string>
     <string name="export_obj">ผนัง 3 มิติ OBJ</string>

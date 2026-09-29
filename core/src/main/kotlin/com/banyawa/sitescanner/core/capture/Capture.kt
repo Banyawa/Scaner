@@ -138,6 +138,10 @@ class Capture(val dir: File, val manifest: Manifest, val frames: List<CaptureFra
 
         fun isCapture(dir: File) = File(dir, FRAMES).isFile
 
+        /** The frames.jsonl content listing exactly [frames], for a thinned copy of a capture. */
+        fun encodeFrames(frames: List<CaptureFrame>): String =
+            frames.joinToString("") { json.encodeToString(it) + "\n" }
+
         internal fun readShorts(file: File, count: Int): ShortArray {
             val bytes = file.readBytes()
             if (bytes.size < count * 2) throw IOException("${file.name}: expected $count depth values")
@@ -234,12 +238,17 @@ class CaptureWriter(val dir: File) {
 
 /** A capture folder as one zip file (and back), for sending to a PC or another person. */
 object CaptureZip {
-    /** Zips [dir]'s contents (paths relative to it) plus [extra] files (path in zip → content). */
-    fun write(dir: File, out: OutputStream, extra: Map<String, ByteArray> = emptyMap()) {
+    /**
+     * Zips [dir]'s contents (paths relative to it) that pass [include], plus [extra] files
+     * (path in zip → content), which take precedence over files of the same path.
+     */
+    fun write(dir: File, out: OutputStream, extra: Map<String, ByteArray> = emptyMap(), include: (String) -> Boolean = { true }) {
         ZipOutputStream(BufferedOutputStream(out, 1 shl 16)).use { zip ->
             val files = dir.walkTopDown().filter { it.isFile }.sortedBy { it.path }
             for (f in files) {
-                zip.putNextEntry(ZipEntry(f.relativeTo(dir).path.replace(File.separatorChar, '/')))
+                val path = f.relativeTo(dir).path.replace(File.separatorChar, '/')
+                if (path in extra || !include(path)) continue
+                zip.putNextEntry(ZipEntry(path))
                 f.inputStream().use { it.copyTo(zip) }
                 zip.closeEntry()
             }

@@ -5,6 +5,8 @@ import android.content.Intent
 import androidx.annotation.StringRes
 import androidx.core.content.FileProvider
 import com.banyawa.sitescanner.R
+import com.banyawa.sitescanner.core.capture.Capture
+import com.banyawa.sitescanner.core.capture.CaptureFrame
 import com.banyawa.sitescanner.core.capture.CaptureZip
 import com.banyawa.sitescanner.core.export.ElevationDxf
 import com.banyawa.sitescanner.core.export.FloorPlanDxf
@@ -43,6 +45,7 @@ enum class ExportFormat(
     CSV_MEASUREMENTS("csv", "text/csv", R.string.export_csv),
     CSV_OPENINGS("csv", "text/csv", R.string.export_openings_csv),
     CAPTURE_ZIP("zip", "application/zip", R.string.export_capture_zip, needsCapture = true),
+    CAPTURE_ZIP_SMALL("zip", "application/zip", R.string.export_capture_zip_small, needsCapture = true),
 }
 
 /**
@@ -55,7 +58,9 @@ enum class ExportFormat(
 class ExportManager(private val context: Context, private val analysis: ScanAnalysis) {
 
     suspend fun export(project: Project, scan: ScanInfo, format: ExportFormat): File {
-        if (format == ExportFormat.CAPTURE_ZIP) return exportCapture(project, scan)
+        if (format == ExportFormat.CAPTURE_ZIP || format == ExportFormat.CAPTURE_ZIP_SMALL) {
+            return exportCapture(project, scan, small = format == ExportFormat.CAPTURE_ZIP_SMALL)
+        }
         val result = analysis.floorPlan(project.id, scan)
         val alignment = result.plan.alignment
         val elevations = when (format) {
@@ -112,15 +117,33 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
      * The recorded walk-through as one zip: the frames as recorded plus the camera poses in
      * the formats PC photogrammetry tools read (COLMAP, nerfstudio), for a photo-quality model.
      */
-    private suspend fun exportCapture(project: Project, scan: ScanInfo): File = withContext(Dispatchers.IO) {
+    private suspend fun exportCapture(project: Project, scan: ScanInfo, small: Boolean): File = withContext(Dispatchers.IO) {
         val captureDir = analysis.repository.captureDir(project.id, scan)?.takeIf { it.isDirectory }
             ?: throw IllegalStateException(context.getString(R.string.export_no_capture))
         val dir = File(context.cacheDir, "exports").apply { mkdirs() }
         dir.listFiles()?.forEach { it.deleteRecursively() }
-        val file = File(dir, "${safeName(project.name)}_${safeName(scan.name)}_recording.zip")
-        val extra = PoseExportFiles.forCapture(captureDir)
-        file.outputStream().use { CaptureZip.write(captureDir, it, extra) }
+        val capture = Capture.open(captureDir)
+        // The small zip keeps every k-th frame so it stays under what chat apps and GitHub take.
+        val frames = if (small) thinToBudget(capture, SMALL_ZIP_BYTES) else capture.frames
+        val kept = frames.flatMap { listOfNotNull(it.image, it.depth, it.confidence, it.smoothDepth) }.toHashSet()
+        val extra = PoseExportFiles.forCapture(captureDir, frames) + (Capture.FRAMES to Capture.encodeFrames(frames).toByteArray())
+        val suffix = if (small) "recording_small" else "recording"
+        val file = File(dir, "${safeName(project.name)}_${safeName(scan.name)}_$suffix.zip")
+        file.outputStream().use { out ->
+            CaptureZip.write(captureDir, out, extra) { path -> !path.startsWith("${Capture.FRAME_DIR}/") || path in kept }
+        }
         file
+    }
+
+    /** Every k-th frame, k chosen so their files add up to about [budget] bytes. */
+    private fun thinToBudget(capture: Capture, budget: Long): List<CaptureFrame> {
+        val sizes = capture.frames.map { f ->
+            listOfNotNull(f.image, f.depth, f.confidence, f.smoothDepth).sumOf { File(capture.dir, it).length() }
+        }
+        val total = sizes.sum()
+        if (total <= budget) return capture.frames
+        val step = ((total + budget - 1) / budget).toInt().coerceAtLeast(2)
+        return capture.frames.filterIndexed { i, _ -> i % step == 0 }
     }
 
     private suspend fun mesh(project: Project, scan: ScanInfo) =
@@ -130,6 +153,9 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
         s.trim().replace(Regex("[^\\p{L}\\p{M}\\p{N}._-]+"), "_").trim('_').ifEmpty { "scan" }.take(40)
 
     companion object {
+        /** GitHub's web upload takes files up to 25 MB; chat apps around that too. */
+        private const val SMALL_ZIP_BYTES = 20L * 1024 * 1024
+
         /** Opens the system share sheet; pass an Activity context. */
         fun share(context: Context, file: File, format: ExportFormat) {
             val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
