@@ -49,4 +49,8 @@ object PlanColors {
     val Door = Color(0xFF00897B)
     val Window = Color(0xFF1E6FD9)
     val WindowFill = Color(0x331E6FD9)
+
+    /** Scan points standing in front of a wall on an elevation (sockets, pipes, cabinets). */
+    val ElevationFront = Color(0xFFEF6C00)
+    val ElevationKey = Color(0xFFE65100)
 }

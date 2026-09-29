@@ -1,6 +1,7 @@
 package com.banyawa.sitescanner.core.export
 
 import com.banyawa.sitescanner.core.floorplan.DoorLeaf
+import com.banyawa.sitescanner.core.floorplan.Elevation
 import com.banyawa.sitescanner.core.floorplan.FloorPlan
 import com.banyawa.sitescanner.core.floorplan.Opening
 import com.banyawa.sitescanner.core.floorplan.OpeningTags
@@ -12,8 +13,8 @@ import kotlin.math.atan2
 
 /**
  * Builds a 2D plan drawing in millimetres: walls, aligned dimension strings, door and
- * window symbols with tags and a schedule, AR measurements (as 3D lines) and, optionally,
- * the raw scan slice as a tracing underlay.
+ * window symbols with tags and a schedule, AR measurements (as 3D lines), elevation keys
+ * and, optionally, the raw scan slice as a tracing underlay.
  */
 object FloorPlanDxf {
     const val LAYER_WALLS = "A-WALL"
@@ -25,6 +26,7 @@ object FloorPlanDxf {
     const val LAYER_WINDOWS = "A-GLAZ"
     const val LAYER_TAGS = "A-OPEN-TAG"
     const val LAYER_SCHEDULE = "A-SCHED"
+    const val LAYER_ELEVATION_KEYS = "A-ELEV-KEY"
 
     data class Options(
         val title: String? = null,
@@ -34,11 +36,13 @@ object FloorPlanDxf {
         val maxSlicePoints: Int = 60_000,
     )
 
+    /** [elevations] get their keys marked outside the walls they show. */
     fun build(
         plan: FloorPlan,
         slice: FloatArray? = null,
         measurements: List<Measurement> = emptyList(),
         options: Options = Options(),
+        elevations: List<Elevation> = emptyList(),
     ): DxfDocument {
         val dxf = DxfDocument()
             .layer(LAYER_WALLS, 7)
@@ -50,6 +54,7 @@ object FloorPlanDxf {
             .layer(LAYER_WINDOWS, 5)
             .layer(LAYER_TAGS, 6)
             .layer(LAYER_SCHEDULE, 3)
+        if (elevations.isNotEmpty()) dxf.layer(LAYER_ELEVATION_KEYS, 30)
         val th = options.textHeightMm
 
         if (options.includeSlice && slice != null && slice.isNotEmpty()) {
@@ -72,6 +77,7 @@ object FloorPlanDxf {
 
         val tags = OpeningTags.assign(plan.openings)
         for (o in plan.openings) opening(dxf, o, tags.getValue(o.id), th)
+        for (e in elevations) elevationKey(dxf, e, options)
 
         for (m in measurements) {
             val a = plan.alignment.toSite(m.start)
@@ -93,8 +99,10 @@ object FloorPlanDxf {
         }
 
         val bounds = plan.bounds()
+        // Clear of the dimensions and, when drawn, the elevation keys.
+        val margin = options.dimensionOffsetMm + th * (if (elevations.isEmpty()) 6 else 13)
         val noteX = (bounds?.min?.x ?: 0f) * 1000.0
-        var noteY = (bounds?.max?.y ?: 0f) * 1000.0 + options.dimensionOffsetMm + th * 6
+        var noteY = (bounds?.max?.y ?: 0f) * 1000.0 + margin
         val notes = buildList {
             options.title?.takeIf { it.isNotBlank() }?.let { add(it) }
             plan.roomHeight?.let { add("Floor to ceiling: ${LengthFormat.toMillimeters(it)} mm") }
@@ -112,7 +120,7 @@ object FloorPlanDxf {
         }
 
         if (plan.openings.isNotEmpty()) {
-            val top = (bounds?.min?.y ?: 0f) * 1000.0 - options.dimensionOffsetMm - th * 6
+            val top = (bounds?.min?.y ?: 0f) * 1000.0 - margin
             schedule(dxf, plan.openings, tags, noteX, top, th)
         }
         return dxf
@@ -147,7 +155,7 @@ object FloorPlanDxf {
             size
         }
         // Labels run along the wall, on the room side.
-        val angle = readableAngle(o.direction)
+        val angle = DxfDrafting.readableAngle(o.direction)
         val mid = Vec2.lerp(s, e, 0.5f)
         val tagAt = mid + n * (th * 3.5).toFloat()
         dxf.text(LAYER_TAGS, tagAt.x.toDouble(), tagAt.y.toDouble(), th * 1.4, tag, angle, DxfDocument.HAlign.CENTER)
@@ -170,14 +178,6 @@ object FloorPlanDxf {
     }
 
     private fun normalizeDeg(deg: Double) = ((deg % 360.0) + 360.0) % 360.0
-
-    /** Text angle along [dir], flipped so it never reads upside down. */
-    private fun readableAngle(dir: Vec2): Double {
-        var angle = Math.toDegrees(atan2(dir.y.toDouble(), dir.x.toDouble()))
-        if (angle > 90.0) angle -= 180.0
-        if (angle <= -90.0) angle += 180.0
-        return angle
-    }
 
     /** Door / window schedule as a text table (one TEXT per cell so columns line up). */
     private fun schedule(dxf: DxfDocument, openings: List<Opening>, tags: Map<String, String>, x: Double, top: Double, th: Double) {
@@ -214,46 +214,26 @@ object FloorPlanDxf {
         }
     }
 
-    private fun mm(m: Float) = LengthFormat.toMillimeters(m).toString()
+    private fun mm(m: Float) = DxfDrafting.mm(m)
 
     private fun dimension(dxf: DxfDocument, startM: Vec2, endM: Vec2, centroid: Vec2, options: Options) {
         val lengthM = startM.distanceTo(endM)
         if (lengthM <= 0f) return
-        val dir = (endM - startM).normalized()
-        var normal = dir.perp()
+        var normal = (endM - startM).normalized().perp()
         if ((Vec2.lerp(startM, endM, 0.5f) - centroid) dot normal < 0f) normal = -normal
-
-        val s = startM * 1000f
-        val e = endM * 1000f
-        val off = options.dimensionOffsetMm.toFloat()
-        val th = options.textHeightMm.toFloat()
-        val ds = s + normal * off
-        val de = e + normal * off
-
-        // Extension lines: small gap at the wall, overshoot past the dimension line.
-        val gap = 50f
-        val over = 80f
-        line(dxf, s + normal * gap, s + normal * (off + over))
-        line(dxf, e + normal * gap, e + normal * (off + over))
-        line(dxf, ds, de)
-        // Architectural 45° ticks.
-        val tick = (dir + normal).normalized() * (th * 0.6f)
-        line(dxf, ds - tick, ds + tick)
-        line(dxf, de - tick, de + tick)
-
-        val angle = readableAngle(dir)
-        val mid = Vec2.lerp(ds, de, 0.5f) + normal * (th * 0.4f)
-        dxf.text(
-            LAYER_DIMS,
-            mid.x.toDouble(),
-            mid.y.toDouble(),
-            th.toDouble(),
-            LengthFormat.toMillimeters(lengthM).toString(),
-            rotationDeg = angle,
-            align = DxfDocument.HAlign.CENTER,
+        DxfDrafting.dimension(
+            dxf, LAYER_DIMS, startM * 1000f, endM * 1000f, normal,
+            options.dimensionOffsetMm.toFloat(), options.textHeightMm.toFloat(), mm(lengthM),
         )
     }
 
-    private fun line(dxf: DxfDocument, a: Vec2, b: Vec2) =
-        dxf.line(LAYER_DIMS, a.x.toDouble(), a.y.toDouble(), b.x.toDouble(), b.y.toDouble())
+    /** Circled elevation key outside each wall, matching the elevation drawings. */
+    private fun elevationKey(dxf: DxfDocument, e: Elevation, options: Options) {
+        val th = options.textHeightMm
+        val radius = th * 2.2
+        val at = e.midpoint * 1000f - e.interiorNormal * (options.dimensionOffsetMm + th * 8).toFloat()
+        dxf.circle(LAYER_ELEVATION_KEYS, at.x.toDouble(), at.y.toDouble(), radius)
+        // Centre the letters on the circle: TEXT is placed by its baseline.
+        dxf.text(LAYER_ELEVATION_KEYS, at.x.toDouble(), at.y - th, th * 2, e.key, align = DxfDocument.HAlign.CENTER)
+    }
 }

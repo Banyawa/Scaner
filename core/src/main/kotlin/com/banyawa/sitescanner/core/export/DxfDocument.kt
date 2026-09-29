@@ -1,7 +1,7 @@
 package com.banyawa.sitescanner.core.export
 
 /**
- * Minimal ASCII DXF (AutoCAD R12 / AC1009) writer: layers, LINE, ARC, TEXT and POINT.
+ * Minimal ASCII DXF (AutoCAD R12 / AC1009) writer: layers, LINE, ARC, CIRCLE, TEXT and POINT.
  * R12 is the most widely readable DXF flavour (AutoCAD, BricsCAD, ZWCAD, LibreCAD,
  * QCAD, SketchUp, Revit). Non-ASCII text (e.g. Thai labels) is written as \U+XXXX escapes.
  */
@@ -47,6 +47,15 @@ class DxfDocument {
         pair(40, radius)
         pair(50, startDeg)
         pair(51, endDeg)
+        extend(cx - radius, cy - radius, 0.0)
+        extend(cx + radius, cy + radius, 0.0)
+    }
+
+    fun circle(layer: String, cx: Double, cy: Double, radius: Double) {
+        ensureLayer(layer)
+        entity("CIRCLE", layer)
+        pair(10, cx); pair(20, cy); pair(30, 0.0)
+        pair(40, radius)
         extend(cx - radius, cy - radius, 0.0)
         extend(cx + radius, cy + radius, 0.0)
     }

@@ -78,7 +78,7 @@ object OpeningPlacement {
      * the side from which the walls look enclosed, falling back to the side facing the
      * middle of the plan.
      */
-    private fun interiorNormal(plan: FloorPlan, line: WallLine): Vec2 {
+    internal fun interiorNormal(plan: FloorPlan, line: WallLine): Vec2 {
         plan.openings.firstOrNull { o ->
             abs(o.direction cross line.dir) < 0.05f && abs(line.distance(o.midpoint)) < 0.1f
         }?.let { return it.interiorNormal }

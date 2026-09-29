@@ -83,6 +83,7 @@ import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -101,6 +102,8 @@ import com.banyawa.sitescanner.R
 import com.banyawa.sitescanner.SiteScannerApp
 import com.banyawa.sitescanner.app
 import com.banyawa.sitescanner.core.floorplan.DoorSwing
+import com.banyawa.sitescanner.core.floorplan.Elevation
+import com.banyawa.sitescanner.core.floorplan.ElevationBuilder
 import com.banyawa.sitescanner.core.floorplan.FloorPlanResult
 import com.banyawa.sitescanner.core.floorplan.Hinge
 import com.banyawa.sitescanner.core.floorplan.Opening
@@ -117,6 +120,7 @@ import com.banyawa.sitescanner.data.ExportEvent
 import com.banyawa.sitescanner.data.ExportFormat
 import com.banyawa.sitescanner.data.ExportManager
 import com.banyawa.sitescanner.ui.theme.PlanColors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -143,6 +147,8 @@ sealed interface PlanState {
         val result: FloorPlanResult,
         val slicePoints: List<Offset>,
         val measurements: List<PlanMeasurement>,
+        /** Null while they are being worked out. */
+        val elevations: List<Elevation>? = null,
     ) : PlanState {
         val openings: List<Opening> get() = result.plan.openings
         val tags: Map<String, String> by lazy { OpeningTags.assign(openings) }
@@ -161,6 +167,15 @@ sealed interface PlanState {
             .filter { it.second <= maxDistance }
             .minByOrNull { it.second }
             ?.first
+
+        /** The elevation whose key, drawn [keyOffset] outside its wall, is within [maxDistance] of [p]. */
+        fun elevationAt(p: Vec2, maxDistance: Float, keyOffset: Float): Elevation? = elevations
+            ?.map { it to p.distanceTo(it.midpoint - it.interiorNormal * keyOffset) }
+            ?.filter { it.second <= maxDistance }
+            ?.minByOrNull { it.second }
+            ?.first
+
+        fun withElevations(elevations: List<Elevation>?) = Loaded(project, scan, result, slicePoints, measurements, elevations)
     }
 }
 
@@ -186,6 +201,9 @@ class FloorPlanViewModel(private val projectId: String, private val scanId: Stri
 
     private val _events = MutableSharedFlow<ExportEvent>(extraBufferCapacity = 4)
     val events: SharedFlow<ExportEvent> = _events.asSharedFlow()
+
+    /** Elevations as built from the scan; openings and measurements are put on per state. */
+    private var baseElevations: List<Elevation>? = null
 
     init {
         viewModelScope.launch {
@@ -214,6 +232,18 @@ class FloorPlanViewModel(private val projectId: String, private val scanId: Stri
                 pts to ms
             }
             _state.value = PlanState.Loaded(project, scan, result, slice, measurements)
+
+            // Elevations need another look at the whole cloud; the plan shows meanwhile.
+            val base = try {
+                app.analysis.elevations(projectId, scan)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                emptyList()
+            }
+            baseElevations = base
+            val current = _state.value as? PlanState.Loaded ?: return@launch
+            _state.value = current.withElevations(ElevationBuilder.attach(base, current.result.plan, current.scan.measurements))
         }
     }
 
@@ -253,7 +283,8 @@ class FloorPlanViewModel(private val projectId: String, private val scanId: Stri
 
     private suspend fun save(loaded: PlanState.Loaded, scan: ScanInfo, result: FloorPlanResult) {
         val project = withContext(Dispatchers.IO) { app.repository.upsertScan(projectId, scan) }
-        _state.value = PlanState.Loaded(project, scan, result, loaded.slicePoints, loaded.measurements)
+        val elevations = baseElevations?.let { ElevationBuilder.attach(it, result.plan, scan.measurements) }
+        _state.value = PlanState.Loaded(project, scan, result, loaded.slicePoints, loaded.measurements, elevations)
     }
 
     fun export(format: ExportFormat) {
@@ -297,6 +328,7 @@ fun FloorPlanScreen(projectId: String, scanId: String, onBack: () -> Unit) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var editing by remember { mutableStateOf<OpeningDraft?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
+    var elevationKey by rememberSaveable { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val missedWall = stringResource(R.string.plan_add_miss)
 
@@ -319,7 +351,7 @@ fun FloorPlanScreen(projectId: String, scanId: String, onBack: () -> Unit) {
                             }
                         }
                     }
-                    if (tab == 0) {
+                    if (tab != 1) {
                         IconButton(onClick = { resetToken++ }) {
                             Icon(Icons.Filled.CenterFocusStrong, contentDescription = stringResource(R.string.viewer_reset))
                         }
@@ -350,6 +382,11 @@ fun FloorPlanScreen(projectId: String, scanId: String, onBack: () -> Unit) {
                             onClick = { tab = 1 },
                             text = { Text(stringResource(R.string.plan_tab_openings, s.openings.size)) },
                         )
+                        Tab(
+                            selected = tab == 2,
+                            onClick = { tab = 2 },
+                            text = { Text(stringResource(R.string.plan_tab_elevations)) },
+                        )
                     }
                     if (tab == 0) {
                         PlanSummary(s)
@@ -357,8 +394,12 @@ fun FloorPlanScreen(projectId: String, scanId: String, onBack: () -> Unit) {
                             PlanCanvas(
                                 s,
                                 resetToken,
-                                onTap = { p, radius, tagOffset ->
-                                    if (adding) {
+                                onTap = { p, radius, tagOffset, keyOffset ->
+                                    val elevation = if (adding) null else s.elevationAt(p, radius.coerceAtLeast(MIN_WALL_PICK), keyOffset)
+                                    if (elevation != null) {
+                                        elevationKey = elevation.key
+                                        tab = 2
+                                    } else if (adding) {
                                         val draft = vm.draftAt(p, radius.coerceIn(MIN_WALL_PICK, MAX_WALL_PICK))
                                         if (draft != null) {
                                             adding = false
@@ -398,6 +439,14 @@ fun FloorPlanScreen(projectId: String, scanId: String, onBack: () -> Unit) {
                                 )
                             }
                         }
+                    } else if (tab == 2) {
+                        ElevationPane(
+                            state = s,
+                            selected = elevationKey,
+                            onSelect = { elevationKey = it },
+                            resetToken = resetToken,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                        )
                     } else {
                         OpeningList(
                             state = s,
@@ -412,7 +461,11 @@ fun FloorPlanScreen(projectId: String, scanId: String, onBack: () -> Unit) {
                     }
                     ExportBar(
                         enabled = !exporting,
-                        formats = if (tab == 0) PLAN_FORMATS else OPENING_FORMATS,
+                        formats = when (tab) {
+                            0 -> PLAN_FORMATS
+                            1 -> OPENING_FORMATS
+                            else -> ELEVATION_FORMATS
+                        },
                         onExport = vm::export,
                     )
                 }
@@ -449,8 +502,14 @@ private val TAG_OFFSET = 22.dp
 /** Taps within this distance of a symbol hit it. */
 private val TAP_RADIUS = 24.dp
 
+/** Where elevation keys sit, outside the wall they show. */
+private val KEY_OFFSET = 46.dp
+private val KEY_RADIUS = 11.dp
+private val PLAN_PADDING = 64.dp
+
 private val PLAN_FORMATS = listOf(ExportFormat.DXF_PLAN, ExportFormat.OBJ_WALLS, ExportFormat.PTS, ExportFormat.PLY)
 private val OPENING_FORMATS = listOf(ExportFormat.CSV_OPENINGS, ExportFormat.DXF_PLAN)
+private val ELEVATION_FORMATS = listOf(ExportFormat.DXF_ELEVATIONS, ExportFormat.DXF_PLAN)
 
 @Composable
 private fun PlanSummary(s: PlanState.Loaded) {
@@ -506,7 +565,7 @@ fun openingTypeLabel(type: OpeningType): String = stringResource(
     },
 )
 
-private fun openingColor(type: OpeningType) = if (type == OpeningType.WINDOW) PlanColors.Window else PlanColors.Door
+internal fun openingColor(type: OpeningType) = if (type == OpeningType.WINDOW) PlanColors.Window else PlanColors.Door
 
 @Composable
 private fun hingeLabel(hinge: Hinge?): String = stringResource(
@@ -890,14 +949,14 @@ private const val MAX_MM_DIGITS = 6
 
 /**
  * Plan drawing: world (metres, Y north) to screen: x' = ox + x·s, y' = oy − y·s.
- * [onTap] gets the plan point, the tap radius and the tag offset, both in metres at the
- * current zoom.
+ * [onTap] gets the plan point, the tap radius and the offsets of opening tags and elevation
+ * keys from their walls, all in metres at the current zoom.
  */
 @Composable
 private fun PlanCanvas(
     s: PlanState.Loaded,
     resetToken: Int,
-    onTap: (point: Vec2, radius: Float, tagOffset: Float) -> Unit,
+    onTap: (point: Vec2, radius: Float, tagOffset: Float, keyOffset: Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val plan = s.result.plan
@@ -914,11 +973,16 @@ private fun PlanCanvas(
     var ox by remember { mutableFloatStateOf(0f) }
     var oy by remember { mutableFloatStateOf(0f) }
 
+    val pad = with(LocalDensity.current) { PLAN_PADDING.toPx() }
+
     fun fit() {
         if (canvasSize.width == 0 || canvasSize.height == 0) return
         val w = max(bounds.width, 0.5f)
         val h = max(bounds.height, 0.5f)
-        scale = min(canvasSize.width / w, canvasSize.height / h) * 0.8f
+        // Room around the walls for the length labels and elevation keys.
+        val availableW = max(canvasSize.width - 2 * pad, canvasSize.width * 0.5f)
+        val availableH = max(canvasSize.height - 2 * pad, canvasSize.height * 0.5f)
+        scale = min(availableW / w, availableH / h)
         ox = canvasSize.width / 2f - bounds.center.x * scale
         oy = canvasSize.height / 2f + bounds.center.y * scale
     }
@@ -930,6 +994,7 @@ private fun PlanCanvas(
     val measureStyle = TextStyle(color = PlanColors.Measurement, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     val doorStyle = TextStyle(color = PlanColors.Door, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     val windowStyle = TextStyle(color = PlanColors.Window, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    val keyStyle = TextStyle(color = PlanColors.ElevationKey, fontSize = 13.sp, fontWeight = FontWeight.Bold)
 
     Canvas(
         modifier
@@ -947,7 +1012,12 @@ private fun PlanCanvas(
             .pointerInput(Unit) {
                 detectTapGestures { pos ->
                     if (scale > 0f) {
-                        tapHandler(Vec2((pos.x - ox) / scale, (oy - pos.y) / scale), TAP_RADIUS.toPx() / scale, TAG_OFFSET.toPx() / scale)
+                        tapHandler(
+                            Vec2((pos.x - ox) / scale, (oy - pos.y) / scale),
+                            TAP_RADIUS.toPx() / scale,
+                            TAG_OFFSET.toPx() / scale,
+                            KEY_OFFSET.toPx() / scale,
+                        )
                     }
                 }
             },
@@ -1001,6 +1071,14 @@ private fun PlanCanvas(
         }
         for (m in s.measurements) {
             drawLabel(textMeasurer, m.text, toScreen(Vec2.lerp(m.start, m.end, 0.5f)), measureStyle)
+        }
+        // Elevation keys outside their walls; tapping one opens that elevation.
+        for (e in s.elevations.orEmpty()) {
+            val at = toScreen(e.midpoint - e.interiorNormal * (KEY_OFFSET.toPx() / scale))
+            drawCircle(PlanColors.Background, radius = KEY_RADIUS.toPx(), center = at)
+            drawCircle(PlanColors.ElevationKey, radius = KEY_RADIUS.toPx(), center = at, style = Stroke(width = 1.5.dp.toPx()))
+            val layout = textMeasurer.measure(e.key, keyStyle)
+            drawText(layout, topLeft = Offset(at.x - layout.size.width / 2f, at.y - layout.size.height / 2f))
         }
     }
 }
@@ -1077,7 +1155,8 @@ private fun DrawScope.drawGrid(ox: Float, oy: Float, scale: Float) {
     }
 }
 
-private fun DrawScope.drawLabel(measurer: TextMeasurer, text: String, center: Offset, style: TextStyle) {
+/** [text] centred on [center] over a background patch, so it stays readable over the drawing. */
+internal fun DrawScope.drawLabel(measurer: TextMeasurer, text: String, center: Offset, style: TextStyle) {
     if (text.isEmpty()) return
     val layout = measurer.measure(text, style)
     val topLeft = Offset(center.x - layout.size.width / 2f, center.y - layout.size.height / 2f)

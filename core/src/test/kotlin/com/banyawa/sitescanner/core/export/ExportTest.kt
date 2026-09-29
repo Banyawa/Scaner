@@ -1,6 +1,7 @@
 package com.banyawa.sitescanner.core.export
 
 import com.banyawa.sitescanner.core.floorplan.DoorSwing
+import com.banyawa.sitescanner.core.floorplan.ElevationBuilder
 import com.banyawa.sitescanner.core.floorplan.FloorPlan
 import com.banyawa.sitescanner.core.floorplan.FloorPlanExtractor
 import com.banyawa.sitescanner.core.floorplan.Hinge
@@ -13,6 +14,7 @@ import com.banyawa.sitescanner.core.geometry.Vec2
 import com.banyawa.sitescanner.core.geometry.Vec3
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.project.Measurement
+import com.banyawa.sitescanner.core.units.LengthFormat
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -253,6 +255,40 @@ class ExportTest {
         assertTrue(text.contains("\nPAIR-OUT\n"))
         // A pair: two leaves, two arcs.
         assertEquals(2, text.split("\nARC\n").size - 1)
+    }
+
+    @Test
+    fun elevationsDxf() {
+        val holes = listOf(
+            SyntheticRoom.Opening(edge = 0, from = 1.0f, to = 1.9f, topM = 2.05f),
+            SyntheticRoom.Opening(edge = 1, from = 0.8f, to = 2.0f, bottomM = 0.9f, topM = 2.0f),
+        )
+        val leaf = SyntheticRoom.Panel(Vec2(1.0f, 0f), Vec2(1.45f, 0.779f), 0f, 2.03f)
+        val cabinet = SyntheticRoom.Panel(Vec2(0.5f, 2.85f), Vec2(1.5f, 2.85f), 1.4f, 2.0f)
+        val cloud = SyntheticRoom.rectangle(4f, 3f, yawDeg = 12f, openings = holes, panels = listOf(leaf, cabinet))
+        val result = FloorPlanExtractor().extract(cloud)
+        val elevations = ElevationBuilder().build(cloud, result.plan)
+        assertEquals(4, elevations.size)
+        val tags = com.banyawa.sitescanner.core.floorplan.OpeningTags.assign(result.plan.openings)
+
+        val text = ElevationDxf.build(elevations, tags, ElevationDxf.Options(title = "Test")).toString()
+        File("build/test-output").mkdirs()
+        File("build/test-output/elevations.dxf").writeText(text)
+        for (layer in listOf(ElevationDxf.LAYER_WALL, ElevationDxf.LAYER_DOORS, ElevationDxf.LAYER_WINDOWS, ElevationDxf.LAYER_DIMS, ElevationDxf.LAYER_SCAN, ElevationDxf.LAYER_SCAN_FRONT)) {
+            assertTrue("missing layer $layer", text.contains("\n$layer\n"))
+        }
+        for (key in listOf("A", "B", "C", "D")) assertTrue(text.contains("\nELEVATION $key\n"))
+        assertTrue(text.contains("\nD1\n") && text.contains("\nW1\n"))
+        // Wall lengths and the room height are dimensioned; the window's sill too.
+        assertTrue(text.contains("\n2600\n") || text.contains("\n2599\n"))
+        val sill = elevations.flatMap { it.openings }.single { it.opening.type == OpeningType.WINDOW }.bottom
+        assertTrue(text.contains("\n${LengthFormat.toMillimeters(sill)}\n"))
+        assertEquals(0, text.lines().dropLastWhile { it.isEmpty() }.size % 2)
+
+        val plan = FloorPlanDxf.build(result.plan, result.slice, elevations = elevations).toString()
+        File("build/test-output/plan_with_keys.dxf").writeText(plan)
+        assertEquals(4, plan.split("\nCIRCLE\n").size - 1)
+        assertTrue(plan.contains("\n${FloorPlanDxf.LAYER_ELEVATION_KEYS}\n"))
     }
 
     @Test

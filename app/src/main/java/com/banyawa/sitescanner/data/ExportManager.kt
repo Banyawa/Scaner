@@ -5,12 +5,14 @@ import android.content.Intent
 import androidx.annotation.StringRes
 import androidx.core.content.FileProvider
 import com.banyawa.sitescanner.R
+import com.banyawa.sitescanner.core.export.ElevationDxf
 import com.banyawa.sitescanner.core.export.FloorPlanDxf
 import com.banyawa.sitescanner.core.export.MeasurementCsv
 import com.banyawa.sitescanner.core.export.OpeningCsv
 import com.banyawa.sitescanner.core.export.Ply
 import com.banyawa.sitescanner.core.export.Pts
 import com.banyawa.sitescanner.core.export.WallsObj
+import com.banyawa.sitescanner.core.floorplan.OpeningTags
 import com.banyawa.sitescanner.core.project.Project
 import com.banyawa.sitescanner.core.project.ScanInfo
 import kotlinx.coroutines.Dispatchers
@@ -19,6 +21,7 @@ import java.io.File
 
 enum class ExportFormat(val extension: String, val mimeType: String, @StringRes val label: Int) {
     DXF_PLAN("dxf", "application/dxf", R.string.export_dxf),
+    DXF_ELEVATIONS("dxf", "application/dxf", R.string.export_elevations_dxf),
     PLY("ply", "application/octet-stream", R.string.export_ply),
     PTS("pts", "text/plain", R.string.export_pts),
     OBJ_WALLS("obj", "text/plain", R.string.export_obj),
@@ -38,11 +41,17 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
     suspend fun export(project: Project, scan: ScanInfo, format: ExportFormat): File {
         val result = analysis.floorPlan(project.id, scan)
         val alignment = result.plan.alignment
+        val elevations = when (format) {
+            ExportFormat.DXF_PLAN, ExportFormat.DXF_ELEVATIONS -> analysis.elevations(project.id, scan)
+            else -> emptyList()
+        }
+        val title = "${project.name} - ${scan.name}"
         return withContext(Dispatchers.IO) {
             val dir = File(context.cacheDir, "exports").apply { mkdirs() }
             dir.listFiles()?.forEach { it.delete() }
             val suffix = when (format) {
                 ExportFormat.DXF_PLAN -> "plan"
+                ExportFormat.DXF_ELEVATIONS -> "elevations"
                 ExportFormat.OBJ_WALLS -> "walls"
                 ExportFormat.CSV_MEASUREMENTS -> "measurements"
                 ExportFormat.CSV_OPENINGS -> "doors_windows"
@@ -55,8 +64,12 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
                         result.plan,
                         result.slice,
                         scan.measurements,
-                        FloorPlanDxf.Options(title = "${project.name} - ${scan.name}"),
+                        FloorPlanDxf.Options(title = title),
+                        elevations,
                     ).write(out)
+                }
+                ExportFormat.DXF_ELEVATIONS -> file.bufferedWriter().use { out ->
+                    ElevationDxf.build(elevations, OpeningTags.assign(result.plan.openings), ElevationDxf.Options(title = title)).write(out)
                 }
                 ExportFormat.PLY -> Ply.write(analysis.cloud(project.id, scan), file, alignment)
                 ExportFormat.PTS -> file.bufferedWriter().use { Pts.write(analysis.cloud(project.id, scan), it, alignment) }

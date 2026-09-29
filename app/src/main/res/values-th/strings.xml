@@ -147,4 +147,12 @@
     <string name="opening_preview_left">ซ้าย</string>
     <string name="opening_preview_right">ขวา</string>
     <string name="opening_manual">ป้อนขนาดเอง</string>
+
+    <!-- Elevations -->
+    <string name="plan_tab_elevations">รูปด้าน</string>
+    <string name="elevation_summary">ผนัง %1$s · ยาว %2$s · พื้นถึงฝ้า %3$s · มองจากในห้อง</string>
+    <string name="elevation_legend">สีเทา: ผิวผนังที่สแกน สีส้ม: ของที่ติดหรืออยู่หน้าผนัง (ไม่เกิน 300 มม.) เช่น ปลั๊ก ท่อ ตู้</string>
+    <string name="elevations_preparing">กำลังเตรียมรูปด้าน…</string>
+    <string name="elevations_empty">ไม่มีผนังให้วาด ให้สแกนผนังช่วงระดับเข่าถึงระดับศีรษะ โดยยืนห่าง 1–3 เมตร</string>
+    <string name="export_elevations_dxf">รูปด้าน DXF (AutoCAD)</string>
 </resources>
