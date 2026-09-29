@@ -25,13 +25,18 @@ data class FloorPlanParams(
     val minWallLength: Float = 0.3f,
     /** Gaps longer than this split a wall (door openings, occlusions). */
     val maxGap: Float = 0.3f,
-    /** Occupied cells per cell-length of wall; rejects scattered clutter. */
+    /**
+     * Share of the wall's length that has points; rejects scattered clutter, and bands that
+     * only cut across two separate surfaces (a wall and an open door leaf beside it).
+     */
     val minDensity: Float = 0.5f,
     /** Wall ends within this distance of another wall's line are extended/trimmed to meet it. */
     val cornerSnap: Float = 0.35f,
     val detectObliqueWalls: Boolean = true,
     val detectOpenings: Boolean = true,
     val openings: OpeningParams = OpeningParams(),
+    val detectDoorSwing: Boolean = true,
+    val doorSwing: DoorSwingParams = DoorSwingParams(),
 )
 
 /**
@@ -42,7 +47,8 @@ data class FloorPlanParams(
  *    so those walls are axis-aligned,
  * 4. extract axis-aligned wall runs, then oblique walls with RANSAC,
  * 5. snap wall ends into clean corners,
- * 6. find doors and windows in each wall ([OpeningDetector]).
+ * 6. find doors and windows in each wall ([OpeningDetector]) and which way the doors open
+ *    ([DoorSwingDetector]); an open leaf that was taken for a short wall is dropped.
  */
 class FloorPlanExtractor(private val params: FloorPlanParams = FloorPlanParams()) {
 
@@ -73,8 +79,18 @@ class FloorPlanExtractor(private val params: FloorPlanParams = FloorPlanParams()
         val walls = extractWalls(aligned)
         val snapped = snapCorners(walls)
         var plan = FloorPlan(snapped, alignment, ceilingY)
-        if (params.detectOpenings) plan = plan.copy(openings = OpeningDetector(params.openings).detect(cloud, plan))
+        if (params.detectOpenings) plan = withOpenings(cloud, plan)
         return FloorPlanResult(plan, aligned)
+    }
+
+    private fun withOpenings(cloud: PointCloud, plan: FloorPlan): FloorPlan {
+        val openings = OpeningDetector(params.openings).detect(cloud, plan)
+        if (!params.detectDoorSwing) return plan.copy(openings = openings)
+        val swings = DoorSwingDetector(params.doorSwing).detect(cloud, plan.alignment, openings)
+        return plan.copy(
+            walls = plan.walls.filterNot { w -> swings.values.any { it.covers(w) } },
+            openings = openings.map { o -> swings[o.id]?.let { o.copy(swing = it.swing) } ?: o },
+        )
     }
 
     private class Grid(val xs: FloatArray, val ys: FloatArray) {
@@ -213,7 +229,11 @@ class FloorPlanExtractor(private val params: FloorPlanParams = FloorPlanParams()
                 val a0 = pts[run.first() * 2 + alongOff] - cell / 2
                 val a1 = pts[run.last() * 2 + alongOff] + cell / 2
                 val len = a1 - a0
-                if (len < params.minWallLength || run.size / (len / cell) < params.minDensity) continue
+                if (len < params.minWallLength || density(run, len) { pts[it * 2 + alongOff] } < params.minDensity) continue
+                // A surface a few degrees or more off the axis (an open door leaf) crosses the
+                // band diagonally; slicing it would stack up short fake walls. The oblique
+                // pass fits it as one line instead.
+                if (abs(drift(pts, run, alongOff, acrossOff)) > MAX_AXIS_SLOPE) continue
                 val c = run.map { pts[it * 2 + acrossOff] }.average().toFloat()
                 val wall = if (alongX) {
                     WallSegment(Vec2(a0, c), Vec2(a1, c), run.size)
@@ -224,6 +244,29 @@ class FloorPlanExtractor(private val params: FloorPlanParams = FloorPlanParams()
                 for (i in run) used[i] = true
             }
         }
+    }
+
+    /** Fraction of the cell positions along a run of length [len] that are occupied. */
+    private inline fun density(run: List<Int>, len: Float, along: (Int) -> Float): Float {
+        val cell = params.cellSize
+        val occupied = HashSet<Int>()
+        for (i in run) occupied += floor(along(i) / cell).toInt()
+        return occupied.size / max(1f, len / cell)
+    }
+
+    /**
+     * How far the across coordinate drifts per unit along a [run] sorted along the band,
+     * from the medians of its first and last thirds; medians ignore the few cells of a
+     * crossing wall at a corner.
+     */
+    private fun drift(pts: FloatArray, run: List<Int>, alongOff: Int, acrossOff: Int): Float {
+        val k = run.size / 3
+        if (k < 2) return 0f
+        fun median(part: List<Int>, off: Int) = part.map { pts[it * 2 + off] }.sorted()[part.size / 2]
+        val head = run.subList(0, k)
+        val tail = run.subList(run.size - k, run.size)
+        val along = median(tail, alongOff) - median(head, alongOff)
+        return if (along > 0f) (median(tail, acrossOff) - median(head, acrossOff)) / along else 0f
     }
 
     private fun collectBand(pts: FloatArray, used: BooleanArray, acrossOff: Int, center: Float, tol: Float): List<Int> {
@@ -318,7 +361,7 @@ class FloorPlanExtractor(private val params: FloorPlanParams = FloorPlanParams()
                 val t0 = proj(run.first()) - cell / 2
                 val t1 = proj(run.last()) + cell / 2
                 val len = t1 - t0
-                if (len < params.minWallLength || run.size / (len / cell) < params.minDensity) continue
+                if (len < params.minWallLength || density(run, len, proj) < params.minDensity) continue
                 out.add(
                     WallSegment(
                         Vec2(origin.x + dirX * t0, origin.y + dirY * t0),
@@ -372,6 +415,9 @@ class FloorPlanExtractor(private val params: FloorPlanParams = FloorPlanParams()
         private const val RANSAC_SEED = 1234L
         private const val RANSAC_ITERATIONS = 200
         private const val MAX_OBLIQUE_WALLS = 12
+
+        /** tan(6°): steeper runs are not axis-aligned walls. */
+        private const val MAX_AXIS_SLOPE = 0.105f
 
         /** sin(20°): walls meeting at a shallower angle are not treated as corners. */
         private const val MIN_CORNER_SIN = 0.342f

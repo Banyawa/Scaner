@@ -1,7 +1,9 @@
 package com.banyawa.sitescanner.core.export
 
+import com.banyawa.sitescanner.core.floorplan.DoorSwing
 import com.banyawa.sitescanner.core.floorplan.FloorPlan
 import com.banyawa.sitescanner.core.floorplan.FloorPlanExtractor
+import com.banyawa.sitescanner.core.floorplan.Hinge
 import com.banyawa.sitescanner.core.floorplan.Opening
 import com.banyawa.sitescanner.core.floorplan.OpeningType
 import com.banyawa.sitescanner.core.floorplan.SiteAlignment
@@ -148,8 +150,11 @@ class ExportTest {
     /** Square plan with a door on the south wall and a window on the east wall (interior is inside the square). */
     private fun planWithOpenings(): FloorPlan {
         val base = squarePlan()
-        // South wall seen from inside faces south: left = east.
-        val door = Opening("op1", OpeningType.DOOR, Vec2(2f, 0f), Vec2(1.1f, 0f), 0f, 2.05f, Vec2(4f, 0f), Vec2(0f, 0f), 0.9f)
+        // South wall seen from inside faces south: left = east. Hinged there, opening into the room.
+        val door = Opening(
+            "op1", OpeningType.DOOR, Vec2(2f, 0f), Vec2(1.1f, 0f), 0f, 2.05f, Vec2(4f, 0f), Vec2(0f, 0f), 0.9f,
+            swing = DoorSwing(Hinge.LEFT, inward = true),
+        )
         // East wall seen from inside faces east: left = north.
         val window = Opening("op2", OpeningType.WINDOW, Vec2(4f, 2.2f), Vec2(4f, 1.0f), 0.9f, 2.0f, Vec2(4f, 3f), Vec2(4f, 0f), 0.6f)
         return base.copy(
@@ -173,6 +178,8 @@ class ExportTest {
     @Test
     fun dxfDrawsOpeningsAndSchedule() {
         val text = FloorPlanDxf.build(planWithOpenings()).toString()
+        File("build/test-output").mkdirs()
+        File("build/test-output/openings.dxf").writeText(text)
         for (layer in listOf(FloorPlanDxf.LAYER_DOORS, FloorPlanDxf.LAYER_WINDOWS, FloorPlanDxf.LAYER_TAGS, FloorPlanDxf.LAYER_SCHEDULE)) {
             assertTrue("missing layer $layer", text.contains("\n$layer\n"))
         }
@@ -182,8 +189,12 @@ class ExportTest {
         assertTrue(text.contains("\n1200x1100 SILL 900\n"))
         assertTrue(text.contains("DOOR / WINDOW SCHEDULE"))
         assertTrue("low confidence window flagged", text.contains("\nVERIFY\n"))
-        File("build/test-output").mkdirs()
-        File("build/test-output/openings.dxf").writeText(text)
+        // Leaf hinged at x = 2000 opens north; the swing arc runs from the open leaf (90°)
+        // counter-clockwise to the closed position (180°).
+        assertTrue(text.contains("\nARC\n"))
+        assertTrue(text.contains(" 10\n2000.000000\n 20\n0.000000\n 30\n0.000000\n 40\n900.000000\n 50\n90.000000\n 51\n180.000000\n"))
+        assertTrue(text.contains("\nSWING\n"))
+        assertTrue(text.contains("\nL-IN\n"))
     }
 
     @Test
@@ -192,9 +203,13 @@ class ExportTest {
             SyntheticRoom.Opening(edge = 0, from = 1.0f, to = 1.9f, topM = 2.05f),
             SyntheticRoom.Opening(edge = 1, from = 0.8f, to = 2.0f, bottomM = 0.9f, topM = 2.0f),
         )
-        val result = FloorPlanExtractor().extract(SyntheticRoom.rectangle(4f, 3f, yawDeg = 12f, openings = holes))
+        // Leaf hinged on the door's west jamb, opened 60° into the room.
+        val leaf = SyntheticRoom.Panel(Vec2(1.0f, 0f), Vec2(1.45f, 0.779f), 0f, 2.03f)
+        val result = FloorPlanExtractor().extract(SyntheticRoom.rectangle(4f, 3f, yawDeg = 12f, openings = holes, panels = listOf(leaf)))
         assertEquals(2, result.plan.openings.size)
+        assertEquals(DoorSwing(Hinge.RIGHT, inward = true), result.plan.openings.single { it.type == OpeningType.DOOR }.swing)
         val text = FloorPlanDxf.build(result.plan, result.slice).toString()
+        assertTrue(text.contains("\nARC\n"))
         File("build/test-output").mkdirs()
         File("build/test-output/detected.dxf").writeText(text)
         val obj = StringWriter().also { WallsObj.write(result.plan, it) }.toString()
@@ -220,8 +235,24 @@ class ExportTest {
         OpeningCsv.write(planWithOpenings().openings, out, "Scan 1")
         val lines = out.toString().removePrefix("\uFEFF").trim().lines()
         assertEquals(3, lines.size)
-        assertEquals("Scan 1,D1,DOOR,900,2050,0,2050,2000,1100,4000,0.90", lines[1])
-        assertEquals("Scan 1,W1,WINDOW,1200,1100,900,2000,800,1000,3000,0.60", lines[2])
+        assertEquals("Scan 1,D1,DOOR,900,2050,0,2050,2000,1100,4000,0.90,LEFT,IN,SCAN", lines[1])
+        assertEquals("Scan 1,W1,WINDOW,1200,1100,900,2000,800,1000,3000,0.60,,,SCAN", lines[2])
+    }
+
+    @Test
+    fun manualOpeningsAreMarked() {
+        val (door, window) = planWithOpenings().openings
+        val manual = listOf(door.copy(swing = DoorSwing(Hinge.BOTH, inward = false)), window.copy(manual = true))
+        val csv = StringWriter().also { OpeningCsv.write(manual, it) }.toString().trim().lines()
+        assertTrue(csv[1].endsWith(",BOTH,OUT,SCAN"))
+        assertTrue(csv[2].endsWith(",,,MANUAL"))
+
+        val text = FloorPlanDxf.build(planWithOpenings().copy(openings = manual)).toString()
+        assertTrue(text.contains("\nMANUAL\n"))
+        assertTrue("checked by hand, no longer flagged", !text.contains("\nVERIFY\n"))
+        assertTrue(text.contains("\nPAIR-OUT\n"))
+        // A pair: two leaves, two arcs.
+        assertEquals(2, text.split("\nARC\n").size - 1)
     }
 
     @Test

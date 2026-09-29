@@ -44,6 +44,7 @@ import com.banyawa.sitescanner.app
 import com.banyawa.sitescanner.core.floorplan.FloorPlan
 import com.banyawa.sitescanner.core.floorplan.Opening
 import com.banyawa.sitescanner.core.floorplan.OpeningType
+import com.banyawa.sitescanner.core.geometry.Vec2
 import com.banyawa.sitescanner.core.pointcloud.ColorMaps
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.project.ScanInfo
@@ -91,25 +92,34 @@ class ViewerViewModel(projectId: String, scanId: String, private val app: SiteSc
         }
     }
 
+    /** Opening outlines, plus each door leaf standing open at 90° and its swing on the floor. */
     private fun openingFrames(plan: FloorPlan): OpeningFrames {
         fun outline(list: List<Opening>): FloatArray {
-            val out = FloatArray(list.size * 4 * 6)
-            var k = 0
+            val out = ArrayList<Float>()
+            fun segment(p: Vec2, hp: Float, q: Vec2, hq: Float) {
+                val a = plan.alignment.toWorld(p, hp)
+                val b = plan.alignment.toWorld(q, hq)
+                out += a.x; out += a.y; out += a.z
+                out += b.x; out += b.y; out += b.z
+            }
             for (o in list) {
-                val corners = listOf(
-                    plan.alignment.toWorld(o.start, o.bottom),
-                    plan.alignment.toWorld(o.end, o.bottom),
-                    plan.alignment.toWorld(o.end, o.top),
-                    plan.alignment.toWorld(o.start, o.top),
-                )
-                for (i in 0 until 4) {
-                    val a = corners[i]
-                    val b = corners[(i + 1) % 4]
-                    out[k++] = a.x; out[k++] = a.y; out[k++] = a.z
-                    out[k++] = b.x; out[k++] = b.y; out[k++] = b.z
+                segment(o.start, o.bottom, o.end, o.bottom)
+                segment(o.end, o.bottom, o.end, o.top)
+                segment(o.end, o.top, o.start, o.top)
+                segment(o.start, o.top, o.start, o.bottom)
+                for (leaf in o.leaves) {
+                    segment(leaf.hinge, o.top, leaf.open, o.top)
+                    segment(leaf.open, 0f, leaf.open, o.top)
+                    segment(leaf.hinge, FLOOR_LIFT, leaf.open, FLOOR_LIFT)
+                    var prev = leaf.closed
+                    for (k in 1..ARC_SEGMENTS) {
+                        val p = leaf.arcPoint(k / ARC_SEGMENTS.toFloat())
+                        segment(prev, FLOOR_LIFT, p, FLOOR_LIFT)
+                        prev = p
+                    }
                 }
             }
-            return out
+            return out.toFloatArray()
         }
         val (windows, doors) = plan.openings.partition { it.type == OpeningType.WINDOW }
         return OpeningFrames(outline(doors), outline(windows))
@@ -117,6 +127,10 @@ class ViewerViewModel(projectId: String, scanId: String, private val app: SiteSc
 
     companion object {
         private const val MAX_DISPLAY_POINTS = 2_500_000
+        private const val ARC_SEGMENTS = 16
+
+        /** Swing arcs float just above the floor so the floor points do not hide them. */
+        private const val FLOOR_LIFT = 0.01f
     }
 }
 

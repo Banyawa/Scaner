@@ -1,7 +1,7 @@
 package com.banyawa.sitescanner.core.export
 
 /**
- * Minimal ASCII DXF (AutoCAD R12 / AC1009) writer: layers, LINE, TEXT and POINT.
+ * Minimal ASCII DXF (AutoCAD R12 / AC1009) writer: layers, LINE, ARC, TEXT and POINT.
  * R12 is the most widely readable DXF flavour (AutoCAD, BricsCAD, ZWCAD, LibreCAD,
  * QCAD, SketchUp, Revit). Non-ASCII text (e.g. Thai labels) is written as \U+XXXX escapes.
  */
@@ -38,6 +38,18 @@ class DxfDocument {
     }
 
     fun line(layer: String, x1: Double, y1: Double, x2: Double, y2: Double) = line(layer, x1, y1, 0.0, x2, y2, 0.0)
+
+    /** Arc around ([cx], [cy]) running counter-clockwise from [startDeg] to [endDeg]. */
+    fun arc(layer: String, cx: Double, cy: Double, radius: Double, startDeg: Double, endDeg: Double) {
+        ensureLayer(layer)
+        entity("ARC", layer)
+        pair(10, cx); pair(20, cy); pair(30, 0.0)
+        pair(40, radius)
+        pair(50, startDeg)
+        pair(51, endDeg)
+        extend(cx - radius, cy - radius, 0.0)
+        extend(cx + radius, cy + radius, 0.0)
+    }
 
     fun point(layer: String, x: Double, y: Double, z: Double = 0.0) {
         ensureLayer(layer)

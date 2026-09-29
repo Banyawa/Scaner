@@ -1,5 +1,6 @@
 package com.banyawa.sitescanner.core.export
 
+import com.banyawa.sitescanner.core.floorplan.DoorLeaf
 import com.banyawa.sitescanner.core.floorplan.FloorPlan
 import com.banyawa.sitescanner.core.floorplan.Opening
 import com.banyawa.sitescanner.core.floorplan.OpeningTags
@@ -117,7 +118,10 @@ object FloorPlanDxf {
         return dxf
     }
 
-    /** Door: jamb ticks and a threshold line. Window: glazing box straddling the wall. Both get a tag. */
+    /**
+     * Door: jamb ticks plus the leaf drawn open at 90° with its swing arc, or a threshold
+     * line when the swing is unknown. Window: glazing box straddling the wall. Both get a tag.
+     */
     private fun opening(dxf: DxfDocument, o: Opening, tag: String, th: Double) {
         val s = o.start * 1000f
         val e = o.end * 1000f
@@ -137,7 +141,9 @@ object FloorPlanDxf {
             val jamb = n * 75f
             seg(LAYER_DOORS, s - jamb, s + jamb)
             seg(LAYER_DOORS, e - jamb, e + jamb)
-            seg(LAYER_DOORS, s, e)
+            val leaves = o.leaves
+            if (leaves.isEmpty()) seg(LAYER_DOORS, s, e)
+            for (leaf in leaves) swing(dxf, leaf)
             size
         }
         // Labels run along the wall, on the room side.
@@ -149,6 +155,22 @@ object FloorPlanDxf {
         dxf.text(LAYER_TAGS, detailAt.x.toDouble(), detailAt.y.toDouble(), th * 0.8, detail, angle, DxfDocument.HAlign.CENTER)
     }
 
+    private fun swing(dxf: DxfDocument, leaf: DoorLeaf) {
+        val h = leaf.hinge * 1000f
+        val open = leaf.open * 1000f
+        val closed = leaf.closed * 1000f
+        dxf.line(LAYER_DOORS, h.x.toDouble(), h.y.toDouble(), open.x.toDouble(), open.y.toDouble())
+        val toOpen = open - h
+        val toClosed = closed - h
+        val aOpen = Math.toDegrees(atan2(toOpen.y.toDouble(), toOpen.x.toDouble()))
+        val aClosed = Math.toDegrees(atan2(toClosed.y.toDouble(), toClosed.x.toDouble()))
+        // DXF arcs run counter-clockwise; the quarter turn goes whichever way the leaf swings.
+        val (from, to) = if ((toClosed cross toOpen) > 0f) aClosed to aOpen else aOpen to aClosed
+        dxf.arc(LAYER_DOORS, h.x.toDouble(), h.y.toDouble(), h.distanceTo(closed).toDouble(), normalizeDeg(from), normalizeDeg(to))
+    }
+
+    private fun normalizeDeg(deg: Double) = ((deg % 360.0) + 360.0) % 360.0
+
     /** Text angle along [dir], flipped so it never reads upside down. */
     private fun readableAngle(dir: Vec2): Double {
         var angle = Math.toDegrees(atan2(dir.y.toDouble(), dir.x.toDouble()))
@@ -159,10 +181,14 @@ object FloorPlanDxf {
 
     /** Door / window schedule as a text table (one TEXT per cell so columns line up). */
     private fun schedule(dxf: DxfDocument, openings: List<Opening>, tags: Map<String, String>, x: Double, top: Double, th: Double) {
-        val columns = doubleArrayOf(0.0, 800.0, 2000.0, 3000.0, 4000.0, 5000.0, 6000.0, 7400.0)
-        val header = listOf("TAG", "TYPE", "WIDTH", "HEIGHT", "SILL", "HEAD", "FROM LEFT", "CHECK")
+        val columns = doubleArrayOf(0.0, 800.0, 2000.0, 3000.0, 4000.0, 5000.0, 6000.0, 7400.0, 8600.0)
+        val header = listOf("TAG", "TYPE", "WIDTH", "HEIGHT", "SILL", "HEAD", "FROM LEFT", "SWING", "CHECK")
         dxf.text(LAYER_SCHEDULE, x, top, th * 1.4, "DOOR / WINDOW SCHEDULE (mm, clear opening from scan)")
-        var y = top - th * 3
+        dxf.text(
+            LAYER_SCHEDULE, x, top - th * 2, th * 0.8,
+            "FROM LEFT / SWING: seen from inside the room facing the wall. L / R / PAIR = hinge side, IN = opens into the room.",
+        )
+        var y = top - th * 4.5
         header.forEachIndexed { i, h -> dxf.text(LAYER_SCHEDULE, x + columns[i], y, th, h) }
         y -= th * 0.6
         dxf.line(LAYER_SCHEDULE, x, y, x + columns.last() + 800.0, y)
@@ -177,7 +203,12 @@ object FloorPlanDxf {
                 if (o.type == OpeningType.WINDOW) mm(o.bottom) else "-",
                 mm(o.top),
                 mm(o.distanceFromWallStart),
-                if (o.confidence < 0.7f) "VERIFY" else "",
+                o.swing?.code ?: "",
+                when {
+                    o.manual -> "MANUAL"
+                    o.needsCheck -> "VERIFY"
+                    else -> ""
+                },
             )
             row.forEachIndexed { i, v -> if (v.isNotEmpty()) dxf.text(LAYER_SCHEDULE, x + columns[i], y, th, v) }
         }

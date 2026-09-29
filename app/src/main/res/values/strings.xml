@@ -119,8 +119,33 @@
     <string name="opening_from_left">%1$s from left corner</string>
     <string name="opening_verify">Low confidence — check on site</string>
     <string name="opening_delete">Delete (not an opening)</string>
-    <string name="openings_note">Sizes are the clear opening seen in the scan (inside frames), measured from the floor. \"From left corner\" is seen from inside the room facing the wall. Verify rough openings on site before fabrication.</string>
+    <string name="openings_note">Sizes are the clear opening seen in the scan (inside frames), measured from the floor. \"From left corner\", left / right hinge and in / out are seen from inside the room facing the wall. Tap an item, or a symbol on the plan, to correct its size or swing. Verify rough openings on site before fabrication.</string>
     <string name="openings_restore">Restore automatic detection</string>
     <string name="openings_empty">No doors or windows found. Scan each wall with its jambs, head and sill in view, standing 1–3 m away.</string>
     <string name="export_openings_csv">Door/window schedule CSV</string>
+
+    <!-- Door swing & hand editing -->
+    <string name="plan_add_opening">Add door / window</string>
+    <string name="plan_add_hint">Tap a wall to place a door or window</string>
+    <string name="plan_add_miss">No wall there — tap on a wall line</string>
+    <string name="opening_field_from_left">From left corner (mm)</string>
+    <string name="opening_field_width">Width (mm)</string>
+    <string name="opening_field_height">Height (mm)</string>
+    <string name="opening_field_sill">Sill from floor (mm)</string>
+    <string name="opening_wall_length">Wall %1$s corner to corner. Left / right as seen from inside the room.</string>
+    <string name="opening_error_number">Enter sizes in whole millimetres</string>
+    <string name="opening_error_size">Width and height must be at least 100 mm</string>
+    <string name="opening_error_beyond">Runs past the end of the wall (%1$s)</string>
+    <string name="opening_swing">Door swing</string>
+    <string name="hinge_left">Hinge left</string>
+    <string name="hinge_right">Hinge right</string>
+    <string name="hinge_both">Double</string>
+    <string name="hinge_none">Sliding / unknown</string>
+    <string name="swing_in">Opens in</string>
+    <string name="swing_out">Opens out</string>
+    <string name="opening_flip">Swap room side</string>
+    <string name="opening_preview_room">Room</string>
+    <string name="opening_preview_left">Left</string>
+    <string name="opening_preview_right">Right</string>
+    <string name="opening_manual">Sized by hand</string>
 </resources>

@@ -118,8 +118,33 @@
     <string name="opening_from_left">ห่างมุมซ้าย %1$s</string>
     <string name="opening_verify">ความมั่นใจต่ำ — ควรตรวจสอบหน้างาน</string>
     <string name="opening_delete">ลบ (ไม่ใช่ช่องเปิด)</string>
-    <string name="openings_note">ขนาดเป็นช่องว่างสุทธิที่เห็นในสแกน (ด้านในวงกบ) วัดความสูงจากพื้น \"ห่างมุมซ้าย\" คือมองจากในห้องหันหน้าเข้าผนัง ควรวัดช่องเปิดจริงยืนยันก่อนสั่งผลิต</string>
+    <string name="openings_note">ขนาดเป็นช่องว่างสุทธิที่เห็นในสแกน (ด้านในวงกบ) วัดความสูงจากพื้น \"ห่างมุมซ้าย\" บานพับซ้าย/ขวา และเปิดเข้า/ออก คือมองจากในห้องหันหน้าเข้าผนัง แตะรายการหรือสัญลักษณ์บนแปลนเพื่อแก้ขนาดหรือทิศเปิด ควรวัดช่องเปิดจริงยืนยันก่อนสั่งผลิต</string>
     <string name="openings_restore">กลับไปใช้ผลตรวจจับอัตโนมัติ</string>
     <string name="openings_empty">ไม่พบประตูหรือหน้าต่าง ให้สแกนผนังแต่ละด้านให้เห็นวงกบ ขอบบน และขอบล่าง โดยยืนห่าง 1–3 เมตร</string>
     <string name="export_openings_csv">ตารางประตู-หน้าต่าง CSV</string>
+
+    <!-- Door swing & hand editing -->
+    <string name="plan_add_opening">เพิ่มประตู/หน้าต่าง</string>
+    <string name="plan_add_hint">แตะที่แนวผนังเพื่อวางประตูหรือหน้าต่าง</string>
+    <string name="plan_add_miss">ตรงนั้นไม่มีผนัง — แตะบนเส้นผนัง</string>
+    <string name="opening_field_from_left">ห่างมุมซ้าย (มม.)</string>
+    <string name="opening_field_width">กว้าง (มม.)</string>
+    <string name="opening_field_height">สูง (มม.)</string>
+    <string name="opening_field_sill">ขอบล่างจากพื้น (มม.)</string>
+    <string name="opening_wall_length">ผนังยาว %1$s (มุมถึงมุม) ซ้าย/ขวา คือมองจากในห้อง</string>
+    <string name="opening_error_number">กรอกขนาดเป็นตัวเลข มม.</string>
+    <string name="opening_error_size">ความกว้างและความสูงต้องไม่น้อยกว่า 100 มม.</string>
+    <string name="opening_error_beyond">เกินปลายผนัง (%1$s)</string>
+    <string name="opening_swing">การเปิดประตู</string>
+    <string name="hinge_left">บานพับซ้าย</string>
+    <string name="hinge_right">บานพับขวา</string>
+    <string name="hinge_both">บานคู่</string>
+    <string name="hinge_none">บานเลื่อน/ไม่ระบุ</string>
+    <string name="swing_in">เปิดเข้าห้อง</string>
+    <string name="swing_out">เปิดออกนอกห้อง</string>
+    <string name="opening_flip">สลับฝั่งในห้อง</string>
+    <string name="opening_preview_room">ในห้อง</string>
+    <string name="opening_preview_left">ซ้าย</string>
+    <string name="opening_preview_right">ขวา</string>
+    <string name="opening_manual">ป้อนขนาดเอง</string>
 </resources>
