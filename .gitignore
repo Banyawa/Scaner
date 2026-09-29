@@ -26,6 +26,8 @@ Thumbs.db
 *.jks
 *.keystore
 *.p12
+# The shared test-build key is deliberately committed (see app/build.gradle.kts).
+!app/testing.p12
 keystore.properties
 
 # Claude Code agent worktrees

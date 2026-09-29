@@ -100,6 +100,9 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -121,6 +124,13 @@ class ProjectDetailViewModel(private val projectId: String, private val app: Sit
 
     /** Progress (0..1) of the 3D models being generated, by scan id. */
     val building: StateFlow<Map<String, Float>> = app.modelBuilder.progress
+
+    init {
+        // A model finishing in the background changes the scan on disk: show it.
+        viewModelScope.launch {
+            building.map { it.keys }.distinctUntilChanged().drop(1).collect { refresh() }
+        }
+    }
 
     /** Generates the scan's model from its recording again (after an update, or a failed first try). */
     fun rebuild(scan: ScanInfo) {

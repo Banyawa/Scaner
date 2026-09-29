@@ -6,11 +6,13 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-// One fixed key, so every new APK installs over the previous one and keeps its data. CI
-// decodes it from the repository secrets; without them (forks, local builds) the usual
-// throwaway debug key signs instead.
+// One fixed key, so every new APK installs over the previous one and keeps its data. A
+// private key comes from the SIGNING_* secrets in CI; without them the committed test key
+// (app/testing.p12, password "android", not a secret) signs, so test builds from CI and
+// from any machine still update each other. Use a private key before publishing.
 val stableKeystore = System.getenv("SIGNING_KEYSTORE_FILE")?.let { file(it) }?.takeIf { it.isFile }
 val stableKeyPassword = System.getenv("SIGNING_PASSWORD")?.takeIf { it.isNotEmpty() }
+val testingKeystore = file("testing.p12")
 
 // CI builds count up so each one is an update; local builds stay at 1.
 val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
@@ -29,22 +31,26 @@ android {
     }
 
     signingConfigs {
-        if (stableKeystore != null && stableKeyPassword != null) {
-            create("stable") {
+        create("stable") {
+            if (stableKeystore != null && stableKeyPassword != null) {
                 storeFile = stableKeystore
                 storePassword = stableKeyPassword
-                keyAlias = "sitescanner"
                 keyPassword = stableKeyPassword
+            } else {
+                storeFile = testingKeystore
+                storePassword = "android"
+                keyPassword = "android"
             }
+            keyAlias = "sitescanner"
         }
     }
 
     buildTypes {
         getByName("debug") {
-            signingConfigs.findByName("stable")?.let { signingConfig = it }
+            signingConfig = signingConfigs.getByName("stable")
         }
         release {
-            signingConfigs.findByName("stable")?.let { signingConfig = it }
+            signingConfig = signingConfigs.getByName("stable")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

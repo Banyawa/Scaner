@@ -44,15 +44,21 @@ jobs:
             echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/signing.p12"
             echo "SIGNING_KEYSTORE_FILE=$RUNNER_TEMP/signing.p12" >> "$GITHUB_ENV"
           else
-            echo "::warning::No SIGNING_KEYSTORE_BASE64 secret: this APK is signed with a throwaway key and will not install over earlier builds."
+            echo "::notice::No SIGNING_KEYSTORE_BASE64 secret: APKs are signed with the committed test key (app/testing.p12)."
           fi
 
-      - name: Build debug APK
+      - name: Build APKs
         env:
           SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
-        run: ./gradlew :app:assembleDebug --stacktrace
+        run: ./gradlew :app:assembleRelease :app:assembleDebug --stacktrace
 
       - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: site-scanner-apk
+          path: app/build/outputs/apk/release/*.apk
+
+      - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: site-scanner-debug-apk

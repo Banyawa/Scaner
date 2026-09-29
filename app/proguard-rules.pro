@@ -10,3 +10,7 @@
 -keepclasseswithmembers class com.banyawa.sitescanner.core.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
+
+# Generated serializers of the project model, and the annotations serialization reads.
+-keepattributes *Annotation*, InnerClasses
+-keep,includedescriptorclasses class com.banyawa.sitescanner.**$$serializer { *; }
