@@ -70,6 +70,7 @@
     <string name="scan_status_recording">กำลังสแกน…</string>
     <string name="scan_hint_initializing">ขยับมือถือช้า ๆ เพื่อเริ่มจับตำแหน่ง</string>
     <string name="scan_hint_move_slowly">เคลื่อนที่เร็วเกินไป — ช้าลงหน่อย</string>
+    <string name="scan_hint_move_sideways">เดินขยับไปด้านข้างด้วย ไม่ใช่แค่หมุน — มือถือรุ่นนี้วัดระยะจากการเคลื่อนที่</string>
     <string name="scan_hint_more_light">มืดเกินไป — เพิ่มแสงสว่าง</string>
     <string name="scan_hint_more_texture">เล็งไปที่บริเวณที่มีรายละเอียดมากขึ้น</string>
     <string name="scan_stats">%1$s · %2$s จุด · %3$s</string>

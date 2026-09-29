@@ -204,6 +204,7 @@ private fun TopStatus(state: ScanUiState, onBack: () -> Unit, modifier: Modifier
         state.hint == TrackingHint.NONE ->
             stringResource(if (state.recording) R.string.scan_status_recording else R.string.scan_status_ready)
         state.hint == TrackingHint.MOVE_SLOWLY -> stringResource(R.string.scan_hint_move_slowly)
+        state.hint == TrackingHint.MOVE_SIDEWAYS -> stringResource(R.string.scan_hint_move_sideways)
         state.hint == TrackingHint.MORE_LIGHT -> stringResource(R.string.scan_hint_more_light)
         state.hint == TrackingHint.MORE_TEXTURE -> stringResource(R.string.scan_hint_more_texture)
         state.hint == TrackingHint.CAMERA_UNAVAILABLE -> stringResource(R.string.error_camera_unavailable)

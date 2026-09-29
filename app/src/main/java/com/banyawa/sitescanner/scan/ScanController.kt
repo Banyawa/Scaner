@@ -20,7 +20,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicInteger
 
-enum class TrackingHint { NONE, INITIALIZING, MOVE_SLOWLY, MORE_LIGHT, MORE_TEXTURE, CAMERA_UNAVAILABLE }
+enum class TrackingHint { NONE, INITIALIZING, MOVE_SLOWLY, MOVE_SIDEWAYS, MORE_LIGHT, MORE_TEXTURE, CAMERA_UNAVAILABLE }
 
 data class ScreenLabel(val id: String, val x: Float, val y: Float, val text: String, val pending: Boolean = false)
 
@@ -56,7 +56,8 @@ sealed interface ScanAction {
     class Finish(val onResult: (SessionResult) -> Unit) : ScanAction
 }
 
-data class SessionResult(val measurements: List<Measurement>, val floorY: Float?)
+/** [correctedPoses]: keyframe poses (by frame timestamp) read back through anchors at the end of the scan. */
+data class SessionResult(val measurements: List<Measurement>, val floorY: Float?, val correctedPoses: Map<Long, FloatArray> = emptyMap())
 
 class PreviewSnapshot(val version: Int, val cloud: PointCloud)
 
@@ -147,7 +148,7 @@ class ScanController {
         val color = frame?.color as? YuvFrame
         val k = frame?.colorIntrinsics
         if (frame != null && color != null && k != null && recordKeyframes.shouldCapture(frame.cameraToWorld, SystemClock.elapsedRealtime())) {
-            recorder?.add(frame.timestampNs, frame.cameraToWorld, color to k, depth.points, depth.surface, depth.raw)
+            recorder?.add(depth.timestampNs, frame.cameraToWorld, color to k, depth.points, depth.surface, depth.raw)
         }
         submit {
             val before = integrator.voxelCount

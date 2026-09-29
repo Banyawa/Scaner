@@ -62,6 +62,23 @@ class CaptureTest {
     }
 
     @Test
+    fun correctedPosesReplaceTheRecordedOnes() {
+        val dir = tmp.newFolder("corr")
+        val writer = CaptureWriter(dir)
+        val pose = FloatArray(16) { if (it % 5 == 0) 1f else 0f }
+        writer.add(1L, pose, byteArrayOf(1), image)
+        writer.add(2L, pose, byteArrayOf(2), image)
+        val moved = pose.copyOf().also { it[12] = 0.3f }
+        writer.close(Manifest(), mapOf(2L to moved, 99L to moved))
+        assertEquals(1, writer.correctedFrames)
+        val cap = Capture.open(dir)
+        assertArrayEquals(pose, cap.frames[0].pose(), 0f)
+        assertNull(cap.frames[0].recordedCameraToWorld)
+        assertArrayEquals(moved, cap.frames[1].pose(), 0f)
+        assertArrayEquals(pose, FloatArray(16) { cap.frames[1].recordedCameraToWorld!![it] }, 0f)
+    }
+
+    @Test
     fun aRecordingCutShortKeepsItsFrames() {
         val dir = tmp.newFolder("cut")
         val writer = CaptureWriter(dir)

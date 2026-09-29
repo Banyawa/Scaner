@@ -58,6 +58,8 @@ data class CaptureFrame(
     val rawDepth: Boolean = false,
     /** ARCore smoothed depth (every pixel filled) for the surface model, when [depth] is raw. Same size as [depth]. */
     val smoothDepth: String? = null,
+    /** The pose as recorded, when [cameraToWorld] was corrected afterwards from the tracker's refined map. */
+    val recordedCameraToWorld: List<Float>? = null,
 ) {
     val hasDepth: Boolean get() = depth != null && depthIntrinsics != null
     fun pose(): FloatArray = FloatArray(16) { cameraToWorld[it] }
@@ -165,6 +167,12 @@ class CaptureWriter(val dir: File) {
     var frameCount = 0
         private set
 
+    private val written = ArrayList<CaptureFrame>()
+
+    /** Frames whose pose [close] replaced with a corrected one. */
+    var correctedFrames = 0
+        private set
+
     /**
      * @param jpeg the camera image, JPEG-encoded
      * @param depthMm optional depth, row-major millimetres
@@ -218,14 +226,36 @@ class CaptureWriter(val dir: File) {
         lines.write(json.encodeToString(frame))
         lines.newLine()
         lines.flush()
+        written += frame
         frameCount++
         return frame
     }
 
-    /** Writes the summary and closes the recording. */
+    /**
+     * Writes the summary and closes the recording. [correctedPoses] (by frame timestamp)
+     * replace the poses recorded live: the tracker refines its map as the walk goes on, and
+     * poses read back through its anchors at the end line up frames from the start and the
+     * end of the walk that drifted apart meanwhile. The recorded pose is kept alongside.
+     */
     @Synchronized
-    fun close(manifest: Manifest) {
+    fun close(manifest: Manifest, correctedPoses: Map<Long, FloatArray> = emptyMap()) {
         lines.close()
+        if (correctedPoses.isNotEmpty()) {
+            for (i in written.indices) {
+                val f = written[i]
+                val p = correctedPoses[f.timestampNs]?.takeIf { it.size == 16 } ?: continue
+                written[i] = f.copy(cameraToWorld = p.toList(), recordedCameraToWorld = f.recordedCameraToWorld ?: f.cameraToWorld)
+                correctedFrames++
+            }
+            if (correctedFrames > 0) {
+                val tmp = File(dir, Capture.FRAMES + ".tmp")
+                tmp.writeText(Capture.encodeFrames(written))
+                if (!tmp.renameTo(File(dir, Capture.FRAMES))) {
+                    File(dir, Capture.FRAMES).delete()
+                    tmp.renameTo(File(dir, Capture.FRAMES))
+                }
+            }
+        }
         File(dir, Capture.MANIFEST).writeText(json.encodeToString(manifest.copy(frameCount = frameCount)))
     }
 

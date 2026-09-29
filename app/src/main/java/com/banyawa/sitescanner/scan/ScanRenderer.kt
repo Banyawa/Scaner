@@ -67,6 +67,22 @@ class ScanRenderer(
 
     private val measurements = ArrayList<LiveMeasurement>()
     private var pendingStart: Anchor? = null
+
+    /**
+     * Anchors dropped along the walk. ARCore refines its map as the scan goes on (most of
+     * all when an area is seen again) and moves anchors with it, so keyframe poses kept
+     * relative to the nearest anchor come out drift-corrected when read back at the end.
+     */
+    private class KeyAnchor(val anchor: Anchor, val poseThen: Pose)
+
+    private val anchors = ArrayList<KeyAnchor>()
+    private val keyframeAnchors = HashMap<Long, Pair<Int, Pose>>()
+
+    // Rotating on the spot gives depth-from-motion nothing to work with: nudge to step sideways.
+    private var moveCheckMs = 0L
+    private val moveCheckPose = FloatArray(16)
+    private val hintPose = FloatArray(16)
+    private var sidewaysUntilMs = 0L
     private var lastFeatureTimestamp = 0L
     private var retryKeyframe = false
     private var lastUiMs = 0L
@@ -125,7 +141,10 @@ class ScanRenderer(
         camera.getViewMatrix(view, 0)
         Matrix.multiplyMM(viewProj, 0, proj, 0, view, 0)
 
-        if (controller.recording) integrate(frame, camera, now)
+        if (controller.recording) {
+            integrate(session, frame, camera, now)
+            checkSideways(camera, now)
+        }
 
         controller.preview?.let {
             if (it.version != uploadedVersion) {
@@ -144,7 +163,7 @@ class ScanRenderer(
      * Raw depth first; smoothed depth once raw depth proves too sparse; ARCore's feature
      * points when depth is unsupported or never delivers a frame.
      */
-    private fun integrate(frame: Frame, camera: Camera, now: Long) {
+    private fun integrate(session: Session, frame: Frame, camera: Camera, now: Long) {
         // A keyframe's depth can come a few frames late: collect it before taking another.
         if (depthEnabled && capture.isArmed) {
             collectDepth(frame, camera)
@@ -160,12 +179,81 @@ class ScanRenderer(
                 capture.preferSmoothed = true
                 Log.i(TAG, "Raw depth keeps ${controller.depthYield.fraction()} of pixels: switching to smoothed depth")
             }
+            noteKeyframe(session, frame.timestamp, camera.pose)
             capture.arm(frame, camera, pose, withColor = true)
             collectDepth(frame, camera)
             if (controller.depthFrames > 0 || controller.recordingMs() < NO_DEPTH_FALLBACK_MS) return
         }
-        if (!depthEnabled) capture.colorOf(frame, camera)?.let { controller.recordColor(frame.timestamp, pose, it) }
+        if (!depthEnabled) {
+            capture.colorOf(frame, camera)?.let {
+                noteKeyframe(session, frame.timestamp, camera.pose)
+                controller.recordColor(frame.timestamp, pose, it)
+            }
+        }
         integrateFeaturePoints(frame)
+    }
+
+    /** Remembers the keyframe's pose relative to an anchor near it, dropping a new anchor every [ANCHOR_SPACING_M]. */
+    private fun noteKeyframe(session: Session, timestampNs: Long, cameraPose: Pose) {
+        var index = -1
+        var nearest = Float.MAX_VALUE
+        for ((i, a) in anchors.withIndex()) {
+            val d = distance(a.poseThen, cameraPose)
+            if (d < nearest) {
+                nearest = d
+                index = i
+            }
+        }
+        if ((index < 0 || nearest > ANCHOR_SPACING_M) && anchors.size < MAX_ANCHORS) {
+            val anchor = try {
+                session.createAnchor(cameraPose)
+            } catch (e: Exception) {
+                Log.w(TAG, "Anchor not created", e)
+                null
+            }
+            if (anchor != null) {
+                anchors += KeyAnchor(anchor, cameraPose)
+                index = anchors.size - 1
+            }
+        }
+        if (index >= 0) keyframeAnchors[timestampNs] = index to anchors[index].poseThen.inverse().compose(cameraPose)
+    }
+
+    /** Keyframe poses as the anchors place them now; anchors that lost tracking leave their frames as recorded. */
+    private fun correctedPoses(): Map<Long, FloatArray> {
+        val out = HashMap<Long, FloatArray>(keyframeAnchors.size)
+        for ((timestamp, ref) in keyframeAnchors) {
+            val a = anchors[ref.first]
+            if (a.anchor.trackingState != TrackingState.TRACKING) continue
+            out[timestamp] = FloatArray(16).also { a.anchor.pose.compose(ref.second).toMatrix(it, 0) }
+        }
+        for (a in anchors) a.anchor.detach()
+        anchors.clear()
+        keyframeAnchors.clear()
+        return out
+    }
+
+    private fun distance(a: Pose, b: Pose): Float {
+        val dx = a.tx() - b.tx()
+        val dy = a.ty() - b.ty()
+        val dz = a.tz() - b.tz()
+        return kotlin.math.sqrt(dx * dx + dy * dy + dz * dz)
+    }
+
+    private fun checkSideways(camera: Camera, now: Long) {
+        if (!depthEnabled) return
+        camera.pose.toMatrix(hintPose, 0)
+        if (moveCheckMs == 0L) {
+            hintPose.copyInto(moveCheckPose)
+            moveCheckMs = now
+            return
+        }
+        if (now - moveCheckMs < MOVE_CHECK_MS) return
+        val moved = KeyframeSelector.translationBetween(moveCheckPose, hintPose)
+        val turned = KeyframeSelector.rotationDegBetween(moveCheckPose, hintPose)
+        if (moved < MOVE_CHECK_MIN_M && turned > MOVE_CHECK_TURN_DEG) sidewaysUntilMs = now + HINT_MS
+        hintPose.copyInto(moveCheckPose)
+        moveCheckMs = now
     }
 
     private fun collectDepth(frame: Frame, camera: Camera) {
@@ -274,7 +362,7 @@ class ScanRenderer(
                 createdAt = it.createdAt,
             )
         }
-        return SessionResult(list, detectFloorY(session))
+        return SessionResult(list, detectFloorY(session), correctedPoses())
     }
 
     /** Height of the lowest large upward-facing plane: the floor. */
@@ -323,6 +411,7 @@ class ScanRenderer(
         lastUiMs = now
         val tracking = camera.trackingState == TrackingState.TRACKING
         val hint = when {
+            tracking && now < sidewaysUntilMs -> TrackingHint.MOVE_SIDEWAYS
             tracking -> TrackingHint.NONE
             camera.trackingState == TrackingState.PAUSED -> when (camera.trackingFailureReason) {
                 TrackingFailureReason.INSUFFICIENT_LIGHT -> TrackingHint.MORE_LIGHT
@@ -381,6 +470,14 @@ class ScanRenderer(
 
         /** Recording this long without a single depth frame falls back to feature points. */
         private const val NO_DEPTH_FALLBACK_MS = 4_000L
+
+        private const val ANCHOR_SPACING_M = 0.5f
+        private const val MAX_ANCHORS = 150
+
+        private const val MOVE_CHECK_MS = 2_500L
+        private const val MOVE_CHECK_MIN_M = 0.06f
+        private const val MOVE_CHECK_TURN_DEG = 15f
+        private const val HINT_MS = 3_000L
         private const val UI_INTERVAL_MS = 80L
         private const val MIN_FLOOR_AREA_M2 = 0.5f
 

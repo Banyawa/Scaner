@@ -291,9 +291,11 @@ class ScanActivity : ComponentActivity() {
                     durationSec = controller.elapsedSec(),
                     floorY = result.floorY,
                     depthSupported = renderer.depthEnabled,
-                    notes = controller.state.value.diagnostics,
+                    notes = controller.state.value.diagnostics + " · anchors corrected ${result.correctedPoses.size} keyframes",
                 ),
+                result.correctedPoses,
             )
+            Log.i(TAG, "Recording closed: ${recorder.frameCount} frames, ${recorder.correctedFrames} poses corrected from anchors")
             val target = File(recorder.dir.parentFile, repository.captureDirName(scan))
             if (recorder.frameCount == 0 || !recorder.dir.renameTo(target)) {
                 recorder.dir.deleteRecursively()

@@ -73,12 +73,18 @@ class CaptureRecorder(val dir: File) {
         }
     }
 
-    /** Finishes the recording after every queued frame is written. Blocks; call off the main thread. */
-    fun close(manifest: Manifest) {
+    /** Frames whose pose was corrected on closing. */
+    val correctedFrames: Int get() = writer.correctedFrames
+
+    /**
+     * Finishes the recording after every queued frame is written, replacing keyframe poses
+     * with [correctedPoses] where given. Blocks; call off the main thread.
+     */
+    fun close(manifest: Manifest, correctedPoses: Map<Long, FloatArray> = emptyMap()) {
         if (closed) return
         closed = true
         try {
-            executor.submit { writer.close(manifest) }.get()
+            executor.submit { writer.close(manifest, correctedPoses) }.get()
         } finally {
             executor.shutdown()
         }

@@ -16,7 +16,7 @@ import com.google.ar.core.CameraIntrinsics as ArIntrinsics
  * [points] feeds the point cloud (raw depth unless it proved too sparse); [surface] is
  * ARCore's smoothed depth, every pixel filled, for the surface model. Either may be missing.
  */
-class CapturedDepth(val points: DepthFrame?, val raw: Boolean, val surface: DepthFrame?)
+class CapturedDepth(val timestampNs: Long, val points: DepthFrame?, val raw: Boolean, val surface: DepthFrame?)
 
 /**
  * Copies ARCore's raw depth, depth confidence and CPU camera image out of the current
@@ -147,7 +147,7 @@ class FrameCapture {
                 Log.w(TAG, "Smoothed depth timestamps never match camera frames: using it as it comes")
             }
         }
-        return if (p.points == null && p.surface == null) null else CapturedDepth(p.points, p.raw, p.surface)
+        return if (p.points == null && p.surface == null) null else CapturedDepth(p.timestamp, p.points, p.raw, p.surface)
     }
 
     /** Depth taken at [timestamp] belongs to [p] (or, when timestamps are ignored, is simply new). */

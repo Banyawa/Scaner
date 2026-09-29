@@ -72,6 +72,7 @@
     <string name="scan_status_recording">Scanning…</string>
     <string name="scan_hint_initializing">Move the phone slowly to start tracking</string>
     <string name="scan_hint_move_slowly">Moving too fast — slow down</string>
+    <string name="scan_hint_move_sideways">Step sideways while you turn — this phone measures depth from movement</string>
     <string name="scan_hint_more_light">Too dark — add more light</string>
     <string name="scan_hint_more_texture">Aim at areas with more detail</string>
     <string name="scan_stats">%1$s · %2$s pts · %3$s</string>
