@@ -108,6 +108,25 @@ class ElevationTest {
     }
 
     @Test
+    fun northWallIsAEvenOffCentre() {
+        // The door splits the south wall and the cabinet sits east: the middle of the north
+        // wall ends up just west of the walls' centre.
+        val room = SyntheticRoom.polygon(
+            listOf(Vec2(0f, 0f), Vec2(4.2f, 0f), Vec2(4.2f, 3.4f), Vec2(0f, 3.4f)),
+            yawDeg = 12f,
+            openings = listOf(Hole(edge = 0, from = 0.9f, to = 1.8f, topM = 2.05f)),
+            panels = listOf(Panel(Vec2(2.6f, 3.25f), Vec2(3.8f, 3.25f), 1.4f, 2.1f)),
+        )
+        val keyed = ElevationBuilder().build(room, FloorPlanExtractor().extract(room).plan)
+        // Interior normals: north wall faces south, then east faces west, south faces north, west faces east.
+        assertEquals(listOf("A", "B", "C", "D"), keyed.map { it.key })
+        assertEquals(-1f, keyed[0].interiorNormal.y, 0.01f)
+        assertEquals(-1f, keyed[1].interiorNormal.x, 0.01f)
+        assertEquals(1f, keyed[2].interiorNormal.y, 0.01f)
+        assertEquals(1f, keyed[3].interiorNormal.x, 0.01f)
+    }
+
+    @Test
     fun keysRunPastZ() {
         assertEquals("A", ElevationBuilder.key(0))
         assertEquals("Z", ElevationBuilder.key(25))

@@ -130,13 +130,14 @@ class ElevationBuilder(private val params: ElevationParams = ElevationParams()) 
             for (f in frames) f.add(site[0], site[1], site[2])
         }
 
-        val mids = plan.walls.map { it.midpoint }
-        val centre = mids.fold(Vec2.ZERO) { acc, m -> acc + m } * (1f / mids.size.coerceAtLeast(1))
-        val ordered = frames.sortedBy {
-            val m = Vec2.lerp(it.start, it.start + it.dir * it.length, 0.5f)
-            val a = atan2(m.x - centre.x, m.y - centre.y)
+        // Clockwise from north around the room. The sweep starts at north-west, so the wall
+        // facing north comes first even when its middle sits a little west of the centre.
+        val mids = frames.map { it.start + it.dir * (it.length / 2f) }
+        val centre = mids.fold(Vec2.ZERO) { acc, m -> acc + m } * (1f / mids.size)
+        val ordered = frames.indices.sortedBy { i ->
+            val a = atan2(mids[i].x - centre.x, mids[i].y - centre.y) + (PI / 4).toFloat()
             if (a < 0) a + 2 * PI.toFloat() else a
-        }
+        }.map { frames[it] }
         val elevations = ordered.mapIndexed { i, f -> f.toElevation(key(i)) }
         return attach(elevations, plan, measurements, params)
     }

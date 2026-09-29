@@ -409,6 +409,14 @@ private fun ScanCard(
                 }
             }
 
+            if (scan.pointCount == 0) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(R.string.scan_no_points),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             Spacer(Modifier.height(12.dp))
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onView, enabled = scan.pointCount > 0) {

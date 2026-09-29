@@ -58,6 +58,7 @@
     <string name="scan_aim_second_point">Aim the crosshair at the end point</string>
     <string name="scan_live_distance">Distance: %1$s</string>
     <string name="scan_measure_start">Measure</string>
+    <string name="scan_no_points">This scan has no 3D points, so the 3D view and floor plan are unavailable. While scanning, press the round Record button and sweep the camera until the point count rises, then press ✓ Save.</string>
     <string name="scan_measure_end">End point</string>
     <string name="scan_undo">Undo</string>
     <string name="scan_record">Record</string>

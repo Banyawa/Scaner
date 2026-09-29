@@ -202,7 +202,12 @@ class ScanActivity : ComponentActivity() {
             val outcome = withContext(Dispatchers.IO) {
                 runCatching {
                     controller.awaitIdle()
-                    val cloud = controller.integrator.snapshot(minWeight = if (depth) MIN_WEIGHT_DEPTH else MIN_WEIGHT_FEATURES)
+                    val filtered = controller.integrator.snapshot(minWeight = if (depth) MIN_WEIGHT_DEPTH else MIN_WEIGHT_FEATURES)
+                    val all = controller.integrator.voxelCount
+                    // Low-confidence depth everywhere (dim light, plain walls) would filter out
+                    // nearly everything; keeping every point beats saving an empty scan.
+                    val cloud = if (filtered.size < all * MIN_KEPT_FRACTION) controller.integrator.snapshot() else filtered
+                    Log.i(TAG, "Saving ${cloud.size} of $all points (${filtered.size} above the confidence threshold)")
                     val scan = repository.newScan(name).copy(
                         pointCount = cloud.size,
                         floorY = result.floorY,
@@ -232,6 +237,9 @@ class ScanActivity : ComponentActivity() {
         /** Voxels seen only once with low confidence are dropped from the saved cloud. */
         private const val MIN_WEIGHT_DEPTH = 0.5f
         private const val MIN_WEIGHT_FEATURES = 0.2f
+
+        /** Below this share of points passing the confidence filter, all points are kept. */
+        private const val MIN_KEPT_FRACTION = 0.2f
 
         fun newIntent(context: Context, projectId: String): Intent =
             Intent(context, ScanActivity::class.java).putExtra(EXTRA_PROJECT_ID, projectId)

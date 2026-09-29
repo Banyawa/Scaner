@@ -1,6 +1,7 @@
 package com.banyawa.sitescanner.scan
 
 import android.media.Image
+import android.util.Log
 import com.banyawa.sitescanner.core.pointcloud.CameraIntrinsics
 import com.banyawa.sitescanner.core.pointcloud.DepthFrame
 import com.banyawa.sitescanner.core.pointcloud.ImagePacking
@@ -13,17 +14,19 @@ import com.google.ar.core.CameraIntrinsics as ArIntrinsics
 /**
  * Copies ARCore's raw depth, depth confidence and CPU camera image out of the current
  * frame so they can be processed off the GL thread (ARCore images must be closed quickly).
+ * A device whose raw depth keeps failing falls back to ARCore's smoothed depth, so a scan
+ * never ends up empty just because one image type is unsupported.
  */
 class FrameCapture {
     private var lastDepthTimestamp = -1L
+    private var rawDepthFailures = 0
+
+    /** True once raw depth has failed repeatedly and smoothed depth is used instead. */
+    val usingSmoothedDepth: Boolean get() = rawDepthFailures >= MAX_RAW_FAILURES
 
     /** Returns null when no new depth image is available for this frame. */
     fun capture(frame: Frame, camera: Camera, cameraToWorld: FloatArray, withColor: Boolean): DepthFrame? {
-        val depthImage = try {
-            frame.acquireRawDepthImage16Bits()
-        } catch (e: NotYetAvailableException) {
-            return null
-        }
+        val depthImage = acquireDepth(frame) ?: return null
         try {
             if (depthImage.timestamp == lastDepthTimestamp) return null
             lastDepthTimestamp = depthImage.timestamp
@@ -31,7 +34,8 @@ class FrameCapture {
             val h = depthImage.height
             val depthPlane = depthImage.planes[0]
             val depth = ImagePacking.packShortPlane(depthPlane.buffer, w, h, depthPlane.rowStride, depthPlane.pixelStride)
-            val confidence = captureConfidence(frame, w, h)
+            // Confidence only exists for raw depth; smoothed depth counts as fully confident.
+            val confidence = if (usingSmoothedDepth) null else captureConfidence(frame, w, h)
             val intrinsics = camera.textureIntrinsics.toCore().scaledTo(w, h)
             val color = if (withColor) captureColor(frame, camera) else null
             return DepthFrame(
@@ -50,10 +54,30 @@ class FrameCapture {
         }
     }
 
+    private fun acquireDepth(frame: Frame): Image? {
+        if (!usingSmoothedDepth) {
+            try {
+                return frame.acquireRawDepthImage16Bits()
+            } catch (e: NotYetAvailableException) {
+                return null
+            } catch (e: Exception) {
+                rawDepthFailures++
+                Log.w(TAG, "Raw depth unavailable ($rawDepthFailures)", e)
+                if (!usingSmoothedDepth) return null
+            }
+        }
+        return try {
+            frame.acquireDepthImage16Bits()
+        } catch (e: NotYetAvailableException) {
+            null
+        }
+    }
+
     private fun captureConfidence(frame: Frame, w: Int, h: Int): ByteArray? {
         val image = try {
             frame.acquireRawDepthConfidenceImage()
-        } catch (e: NotYetAvailableException) {
+        } catch (e: Exception) {
+            // Not ready yet, or not supported on this device: use the depth without it.
             return null
         }
         try {
@@ -95,6 +119,11 @@ class FrameCapture {
 
     fun reset() {
         lastDepthTimestamp = -1L
+    }
+
+    private companion object {
+        const val TAG = "FrameCapture"
+        const val MAX_RAW_FAILURES = 5
     }
 }
 
