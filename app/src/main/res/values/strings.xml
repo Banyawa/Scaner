@@ -225,6 +225,8 @@
     <string-array name="scan_briefing_tips">
         <item>Hold the phone upright at chest height and move slowly and smoothly.</item>
         <item>Walk sideways along each wall, 1–2 m from it, instead of turning on the spot.</item>
+        <item>Every few metres aim down at the floor and up at the ceiling; the model needs both, not only walls.</item>
+        <item>Walk once around each machine, cabinet or column, 1–1.5 m out, at chest and at knee height; get close and slow for pipes and railings.</item>
         <item>Cover corners, under and behind furniture, and door and window reveals.</item>
         <item>Keep recording while you walk through a door into the next room.</item>
         <item>Good light helps; glass, mirrors and bare white walls confuse the camera.</item>
@@ -239,6 +241,8 @@
     <string name="coach_step_record">Press the round button to start recording</string>
     <string name="coach_step_turn">Turn slowly all the way round (%1$d° so far)</string>
     <string name="coach_step_walk">Walk sideways along each wall, 1–2 m away (%1$s walked)</string>
+    <string name="coach_step_sweep">Aim down at the floor and up at the ceiling (floor %1$d/%3$d s · ceiling %2$d/%3$d s)</string>
+    <string name="coach_step_objects">Walk once around each machine or object, aiming at it (if there are any)</string>
     <string name="coach_step_details">Cover corners, under and behind furniture, doors and windows</string>
     <string name="coach_step_save">Press ✓ to save, then wait for the 3D model</string>
     <string name="coach_ready">All covered! Press ✓ to save, or keep recording into the next room.</string>
@@ -248,6 +252,8 @@
         <item>Walk sideways along the wall, 1–2 m away from it.</item>
         <item>Do not turn on the spot: the camera gets no proper look at anything.</item>
         <item>Give corners a slow look, and crouch to see under and behind furniture.</item>
+        <item>Every few metres aim down at the floor and up at the ceiling for a moment.</item>
+        <item>Walk once around each machine or object, 1–1.5 m out, the phone aimed at it.</item>
         <item>Walk through the door into the next room without stopping the recording.</item>
         <item>Avoid aiming at glass and mirrors for long; good light helps a lot.</item>
         <item>Press ✓ to save, then wait for the 3D model.</item>

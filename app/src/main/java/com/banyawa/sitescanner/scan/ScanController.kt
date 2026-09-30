@@ -52,6 +52,11 @@ data class ScanUiState(
     val turnedDeg: Int = 0,
     /** Coach progress: metres walked while recording. */
     val walkedM: Float = 0f,
+    /** Coach progress: seconds spent aiming at the floor, and at the ceiling, while recording. */
+    val floorSweepSec: Int = 0,
+    val ceilingSweepSec: Int = 0,
+    /** Coach progress: the camera has been walked around something, looking in at it. */
+    val orbited: Boolean = false,
 )
 
 sealed interface ScanAction {

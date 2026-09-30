@@ -85,7 +85,8 @@
     <string-array name="guide_scan_steps">
         <item>Hold the phone upright at chest height and move slowly and smoothly.</item>
         <item>Walk sideways along each wall, 1–2 m away, instead of turning on the spot. Phones without Depth API need this movement to measure depth.</item>
-        <item>Show every wall from floor to ceiling, plus the floor and the ceiling itself.</item>
+        <item>Show every wall from floor to ceiling, plus the floor and the ceiling itself: every few metres aim down at the floor and up at the ceiling for a moment.</item>
+        <item>Machines, cabinets, columns, pallets: walk once around each, 1–1.5 m out with the phone aimed at it, at chest height and again at knee height; pipes, railings and cables need a close, slow pass. The model then sorts the scan into floor, ceiling, walls and objects with their sizes.</item>
         <item>Cover corners, under and behind furniture, and both jambs of each door and window with the wall above it (and below a window).</item>
         <item>Doors: leave them open about 30°–150° and scan the whole leaf so the swing is detected. A closed door reads as wall.</item>
         <item>Keep recording while walking through a door to the next room, or make one scan per room.</item>

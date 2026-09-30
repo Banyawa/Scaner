@@ -153,6 +153,58 @@ def scene_corners(img, s, t):
     draw_room(d, s, img); draw_person(img, s, px, py, ang, reach=reach)
     d = ImageDraw.Draw(img); rec(d, t); mark(d, True, 900, 470)
 
+def side_sweep(img, t):
+    """Scene: aim down at the floor, then up at the ceiling; each turns green as it is swept."""
+    d = ImageDraw.Draw(img)
+    d.line([(0, 470), (W, 470)], fill=WALL, width=6)
+    d.line([(0, 60), (W, 60)], fill=WALL, width=6)
+    x0 = 330
+    d.ellipse([x0 - 40, 120, x0 + 40, 200], fill=PERSON)
+    d.line([(x0, 200), (x0, 380)], fill=PERSON, width=22)
+    d.line([(x0, 380), (x0 - 50, 470)], fill=PERSON, width=18)
+    d.line([(x0, 380), (x0 + 50, 470)], fill=PERSON, width=18)
+    d.line([(x0, 240), (x0 + 110, 260)], fill=PERSON, width=18)
+    half = 2.75
+    down = t < half
+    u = ease(t / half if down else (t - half) / half)
+    aim = 0.95 * u if down else -0.85 * u
+    px, py = x0 + 121, 260
+    c, sn = math.cos(aim), math.sin(aim)
+    pt = lambda dx, dy: (px + dx * c - dy * sn, py + dx * sn + dy * c)
+    d.polygon([pt(-11, -40), pt(11, -40), pt(11, 40), pt(-11, 40)], fill=PHONE, outline=(0, 0, 0))
+    layer = Image.new('RGBA', img.size, (0, 0, 0, 0)); ld = ImageDraw.Draw(layer)
+    reach = 520
+    ld.polygon([(px, py), (px + math.cos(aim - 0.3) * reach, py + math.sin(aim - 0.3) * reach), (px + math.cos(aim + 0.3) * reach, py + math.sin(aim + 0.3) * reach)], fill=CONE, outline=CONE_EDGE)
+    img.alpha_composite(layer)
+    d = ImageDraw.Draw(img)
+    floor_done = u if down else 1.0
+    if floor_done > 0: d.line([(430, 470), (430 + 470 * floor_done, 470)], fill=WALL_DONE, width=8)
+    if not down and u > 0: d.line([(430, 60), (430 + 470 * u, 60)], fill=WALL_DONE, width=8)
+    rec(d, t)
+    if not down and u >= 1: mark(d, True, 860, 300)
+
+def machine_box():
+    return Scene([((2.0, 0.9), (3.2, 0.9)), ((3.2, 0.9), (3.2, 1.8)), ((3.2, 1.8), (2.0, 1.8)), ((2.0, 1.8), (2.0, 0.9))])
+
+def scene_machine(img, room, box, t):
+    """Scene: a full walk around a machine, 1–1.5 m out, the phone aimed in at it."""
+    d = ImageDraw.Draw(img)
+    draw_room(d, room, img)
+    theta = -math.pi / 2 + 2 * math.pi * ease(t / 5.5)
+    cx, cy, r = 2.6, 1.35, 1.35
+    px, py, ang = cx + math.cos(theta) * r, cy + math.sin(theta) * r, theta + math.pi
+    add_cover(box, px, py, ang, fov=math.radians(72), reach=1.7)
+    # the machine: a filled box whose sides colour as they are covered
+    xs = [p[0] for w in box.walls for p in w]; ys = [p[1] for w in box.walls for p in w]
+    d.rectangle([box.P(min(xs), min(ys)), box.P(max(xs), max(ys))], fill=FURN)
+    for i, ((x1, y1), (x2, y2)) in enumerate(box.walls):
+        d.line([box.P(x1, y1), box.P(x2, y2)], fill=WALL, width=10)
+        for a, b in box.cover[i]:
+            d.line([box.P(x1 + (x2 - x1) * a, y1 + (y2 - y1) * a), box.P(x1 + (x2 - x1) * b, y1 + (y2 - y1) * b)], fill=WALL_DONE, width=10)
+    draw_person(img, room, px, py, ang, reach=1.7, fov=math.radians(72))
+    d = ImageDraw.Draw(img); rec(d, t)
+    if t >= 5.5: mark(d, True, 900, 470)
+
 def rooms_b():
     # two rooms side by side with a door gap in the shared wall
     walls = [((0, 0), (7, 0)), ((7, 0), (7, 3.6)), ((7, 3.6), (0, 3.6)), ((0, 3.6), (0, 0)),
@@ -212,7 +264,7 @@ def scene_save(img, t):
         if u >= 1: mark(d, True, 860, 80)
 
 SCENES = [  # (seconds, function)
-    (6.0, 'side'), (7.0, 'walk'), (4.5, 'spin'), (6.0, 'corners'), (5.0, 'door'), (5.5, 'glass'), (5.0, 'save'),
+    (6.0, 'side'), (7.0, 'walk'), (4.5, 'spin'), (6.0, 'corners'), (5.5, 'sweep'), (6.0, 'machine'), (5.0, 'door'), (5.5, 'glass'), (5.0, 'save'),
 ]
 
 def main(out):
@@ -220,7 +272,7 @@ def main(out):
     cmd = [ff, '-y', '-hide_banner', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
            '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-profile:v', 'baseline', '-level', '3.1', '-crf', '27', '-preset', 'slow', '-movflags', '+faststart', out]
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
-    room = room_a(); rooms = rooms_b(); glass_room = room_a()
+    room = room_a(); rooms = rooms_b(); glass_room = room_a(); plain_room = room_a(); box = machine_box()
     total = 0.0
     for secs, name in SCENES:
         frames = int(secs * FPS)
@@ -231,6 +283,8 @@ def main(out):
             elif name == 'walk': scene_walk(img, room, t)
             elif name == 'spin': scene_spin(img, room, t)
             elif name == 'corners': scene_corners(img, room, t)
+            elif name == 'sweep': side_sweep(img, t)
+            elif name == 'machine': scene_machine(img, plain_room, box, t)
             elif name == 'door': scene_door(img, rooms, t)
             elif name == 'glass': scene_glass(img, glass_room, t)
             elif name == 'save': scene_save(img, t)

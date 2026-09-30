@@ -212,10 +212,10 @@ private class Narrator(private val context: Context, private val captions: Array
 
 /** The scenes, in a 960 × 540 design space scaled to the canvas; times in seconds. */
 internal object HowToScenes {
-    const val TOTAL_SEC = 39f
+    const val TOTAL_SEC = 50.5f
 
-    /** Where each scene (and its caption) starts: posture, walk, spin, corners, door, glass, save. */
-    private val STARTS = floatArrayOf(0f, 6f, 13f, 17.5f, 23.5f, 28.5f, 34f)
+    /** Where each scene (and its caption) starts: posture, walk, spin, corners, sweep, machine, door, glass, save. */
+    private val STARTS = floatArrayOf(0f, 6f, 13f, 17.5f, 23.5f, 29f, 35f, 40f, 45.5f)
 
     val BG = Color(0xFF1E2530)
     val GREEN = Color(0xFF4CFF7A)
@@ -247,8 +247,10 @@ internal object HowToScenes {
                 1 -> roomScene(t, spin = false)
                 2 -> roomScene(t, spin = true)
                 3 -> corners(t)
-                4 -> door(t)
-                5 -> glass(t)
+                4 -> sweep(t)
+                5 -> machine(t)
+                6 -> door(t)
+                7 -> glass(t)
                 else -> save(t)
             }
         }
@@ -268,6 +270,11 @@ internal object HowToScenes {
         180f, 90f,
         listOf(Seg(0f, 0f, 6f, 0f), Seg(6f, 0f, 6f, 3.6f), Seg(6f, 3.6f, 0f, 3.6f), Seg(0f, 3.6f, 0f, 0f)),
         listOf(Furniture(3.6f, 0.3f, 1.4f, 0.8f)),
+    )
+    /** A machine standing in the room, its sides as walls so the walk around it colours them. */
+    private val MACHINE = Room(
+        180f, 90f,
+        listOf(Seg(2.0f, 0.9f, 3.2f, 0.9f), Seg(3.2f, 0.9f, 3.2f, 1.8f), Seg(3.2f, 1.8f, 2.0f, 1.8f), Seg(2.0f, 1.8f, 2.0f, 0.9f)),
     )
     private val ROOMS = Room(
         130f, 90f,
@@ -308,12 +315,12 @@ internal object HowToScenes {
         }
     }
 
-    private fun DrawScope.drawRoom(room: Room, cover: Coverage?) {
+    private fun DrawScope.drawRoom(room: Room, cover: Coverage?, fill: Color = FLOOR) {
         val xs = room.walls.flatMap { listOf(it.x1, it.x2) }
         val ys = room.walls.flatMap { listOf(it.y1, it.y2) }
         val a = room.p(xs.min(), ys.min())
         val b = room.p(xs.max(), ys.max())
-        drawRect(FLOOR, a, Size(b.x - a.x, b.y - a.y))
+        drawRect(fill, a, Size(b.x - a.x, b.y - a.y))
         for ((j, f) in room.furniture.withIndex()) {
             val done = cover?.furniture?.get(j) == true
             val tl = room.p(f.x, f.y)
@@ -464,6 +471,71 @@ internal object HowToScenes {
         drawPerson(ROOM, cornerPose(t))
         rec(t)
         mark(true, 900f, 470f)
+    }
+
+    /** Aiming down at the floor, then up at the ceiling, each turning green as the camera sweeps it (side view). */
+    private fun DrawScope.sweep(t: Float) {
+        drawLine(WALL, Offset(0f, 470f), Offset(960f, 470f), strokeWidth = 6f)
+        drawLine(WALL, Offset(0f, 60f), Offset(960f, 60f), strokeWidth = 6f)
+        val x0 = 330f
+        drawCircle(PERSON, 40f, Offset(x0, 160f))
+        drawLine(PERSON, Offset(x0, 200f), Offset(x0, 380f), strokeWidth = 22f, cap = StrokeCap.Round)
+        drawLine(PERSON, Offset(x0, 380f), Offset(x0 - 50f, 470f), strokeWidth = 18f, cap = StrokeCap.Round)
+        drawLine(PERSON, Offset(x0, 380f), Offset(x0 + 50f, 470f), strokeWidth = 18f, cap = StrokeCap.Round)
+        drawLine(PERSON, Offset(x0, 240f), Offset(x0 + 110f, 260f), strokeWidth = 18f, cap = StrokeCap.Round)
+        val half = 2.75f
+        val down = t < half
+        val u = ease(if (down) t / half else (t - half) / half)
+        // The phone tilts with the aim: down toward the floor, then up toward the ceiling.
+        val aim = if (down) 0.95f * u else -0.85f * u
+        val px = x0 + 121f
+        val py = 260f
+        val phone = Path().apply {
+            val c = cos(aim)
+            val sn = sin(aim)
+            fun pt(dx: Float, dy: Float) = Offset(px + dx * c - dy * sn, py + dx * sn + dy * c)
+            moveTo(pt(-11f, -40f).x, pt(-11f, -40f).y); lineTo(pt(11f, -40f).x, pt(11f, -40f).y)
+            lineTo(pt(11f, 40f).x, pt(11f, 40f).y); lineTo(pt(-11f, 40f).x, pt(-11f, 40f).y); close()
+        }
+        drawPath(phone, PHONE)
+        val cone = Path().apply {
+            moveTo(px, py)
+            val reach = 520f
+            lineTo(px + cos(aim - 0.3f) * reach, py + sin(aim - 0.3f) * reach)
+            lineTo(px + cos(aim + 0.3f) * reach, py + sin(aim + 0.3f) * reach)
+            close()
+        }
+        drawPath(cone, CONE)
+        drawPath(cone, CONE_EDGE, style = Stroke(width = 2f))
+        // What the sweep has covered so far.
+        val floorDone = if (down) u else 1f
+        if (floorDone > 0f) drawLine(WALL_DONE, Offset(430f, 470f), Offset(430f + 470f * floorDone, 470f), strokeWidth = 8f)
+        if (!down && u > 0f) drawLine(WALL_DONE, Offset(430f, 60f), Offset(430f + 470f * u, 60f), strokeWidth = 8f)
+        rec(t)
+        if (!down && u >= 1f) mark(true, 860f, 300f)
+    }
+
+    /** A full walk around a machine, 1–1.5 m out, the phone aimed in at it. */
+    private fun machinePose(t: Float): Pose {
+        val theta = (-PI / 2).toFloat() + 2 * PI.toFloat() * ease(t / 5.5f)
+        val cx = 2.6f
+        val cy = 1.35f
+        val r = 1.35f
+        return Pose(cx + cos(theta) * r, cy + sin(theta) * r, theta + PI.toFloat(), reach = 1.7f)
+    }
+
+    private fun DrawScope.machine(t: Float) {
+        drawRoom(ROOM, null)
+        val cover = Coverage(MACHINE)
+        var u = 0f
+        while (u <= t) {
+            cover.add(machinePose(u), fov = (PI / 2.5).toFloat())
+            u += STEP_SEC
+        }
+        drawRoom(MACHINE, cover, fill = FURNITURE)
+        drawPerson(ROOM, machinePose(t), fov = (PI / 2.5).toFloat())
+        rec(t)
+        if (t >= 5.5f) mark(true, 900f, 470f)
     }
 
     /** Through the door into the next room without stopping the recording. */

@@ -94,6 +94,15 @@ class ScanRenderer(
     private var walkedM = 0f
     private var walkStarted = false
     private val walkPos = FloatArray(3)
+    private var coverageMs = 0L
+    private var floorSweepMs = 0L
+    private var ceilingSweepMs = 0L
+    private var orbited = false
+    // Recent camera positions and headings (x, z, fx, fz per sample), a ring of ORBIT_SAMPLES.
+    private val orbitRing = FloatArray(ORBIT_SAMPLES * 4)
+    private var orbitCount = 0
+    private var orbitNext = 0
+    private var orbitSampleMs = 0L
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         GLES20.glClearColor(0f, 0f, 0f, 1f)
@@ -152,7 +161,7 @@ class ScanRenderer(
         if (controller.recording) {
             integrate(session, frame, camera, now)
             checkSideways(camera, now)
-            trackCoverage(camera)
+            trackCoverage(camera, now)
         }
         if (now - levelCheckMs >= LEVEL_CHECK_MS) {
             levelCheckMs = now
@@ -269,8 +278,10 @@ class ScanRenderer(
     }
 
     /** Adds the camera's heading to the turn covered and its movement to the distance walked. */
-    private fun trackCoverage(camera: Camera) {
+    private fun trackCoverage(camera: Camera, now: Long) {
         val p = camera.pose
+        val dt = if (coverageMs == 0L) 0L else (now - coverageMs).coerceAtMost(200L)
+        coverageMs = now
         if (!walkStarted) {
             walkPos[0] = p.tx(); walkPos[1] = p.ty(); walkPos[2] = p.tz()
             walkStarted = true
@@ -285,14 +296,63 @@ class ScanRenderer(
                 walkPos[0] = p.tx(); walkPos[1] = p.ty(); walkPos[2] = p.tz()
             }
         }
-        // The camera looks down its −Z axis; a heading only counts when it is not aimed at the floor or ceiling.
+        // The camera looks down its −Z axis; a heading only counts when it is not aimed at the floor or ceiling,
+        // and time aimed down or up counts as sweeping the floor or the ceiling.
         val z = p.zAxis
         val fx = -z[0]
+        val fy = -z[1]
         val fz = -z[2]
+        if (fy < -SWEEP_MIN_PITCH) floorSweepMs += dt
+        if (fy > SWEEP_MIN_PITCH) ceilingSweepMs += dt
         if (fx * fx + fz * fz < MIN_LEVEL_LOOK * MIN_LEVEL_LOOK) return
         val yaw = kotlin.math.atan2(fx, fz)
         val bin = ((yaw + Math.PI) / (2 * Math.PI) * LOOK_BINS).toInt().coerceIn(0, LOOK_BINS - 1)
         lookedBins[bin] = true
+        if (!orbited && now - orbitSampleMs >= ORBIT_SAMPLE_MS) {
+            orbitSampleMs = now
+            trackOrbit(p.tx(), p.tz(), fx, fz)
+        }
+    }
+
+    /**
+     * Notices the camera being walked around something: over the recent samples the
+     * positions circle their own centre through most of a turn while the headings point
+     * in at it (a machine, a column, a table given a full walk-around).
+     */
+    private fun trackOrbit(x: Float, z: Float, fx: Float, fz: Float) {
+        val len = kotlin.math.sqrt(fx * fx + fz * fz)
+        orbitRing[orbitNext * 4] = x
+        orbitRing[orbitNext * 4 + 1] = z
+        orbitRing[orbitNext * 4 + 2] = fx / len
+        orbitRing[orbitNext * 4 + 3] = fz / len
+        orbitNext = (orbitNext + 1) % ORBIT_SAMPLES
+        if (orbitCount < ORBIT_SAMPLES) orbitCount++
+        if (orbitCount < ORBIT_MIN_SAMPLES) return
+        // The circle's centre, then how much of the turn around it the positions cover, looking in.
+        var cx = 0f
+        var cz = 0f
+        for (i in 0 until orbitCount) {
+            cx += orbitRing[i * 4]
+            cz += orbitRing[i * 4 + 1]
+        }
+        cx /= orbitCount
+        cz /= orbitCount
+        val bins = BooleanArray(LOOK_BINS)
+        var inward = 0
+        var farEnough = 0
+        for (i in 0 until orbitCount) {
+            val dx = cx - orbitRing[i * 4]
+            val dz = cz - orbitRing[i * 4 + 1]
+            val r = kotlin.math.sqrt(dx * dx + dz * dz)
+            if (r < ORBIT_MIN_RADIUS_M) continue
+            farEnough++
+            val toward = (dx * orbitRing[i * 4 + 2] + dz * orbitRing[i * 4 + 3]) / r
+            if (toward < ORBIT_MIN_INWARD) continue
+            inward++
+            val a = kotlin.math.atan2(-dx, -dz)
+            bins[((a + Math.PI) / (2 * Math.PI) * LOOK_BINS).toInt().coerceIn(0, LOOK_BINS - 1)] = true
+        }
+        if (farEnough >= ORBIT_MIN_SAMPLES && inward >= farEnough * 2 / 3 && bins.count { b -> b } * (360 / LOOK_BINS) >= ORBIT_MIN_DEG) orbited = true
     }
 
     private fun collectDepth(frame: Frame, camera: Camera) {
@@ -496,6 +556,9 @@ class ScanRenderer(
                 floorFound = floorFound,
                 turnedDeg = lookedBins.count { b -> b } * (360 / LOOK_BINS),
                 walkedM = walkedM,
+                floorSweepSec = (floorSweepMs / 1000).toInt(),
+                ceilingSweepSec = (ceilingSweepMs / 1000).toInt(),
+                orbited = orbited,
             )
         }
     }
@@ -522,6 +585,17 @@ class ScanRenderer(
         private const val MIN_LEVEL_LOOK = 0.5f
         private const val WALK_STEP_M = 0.1f
         private const val LEVEL_CHECK_MS = 1_000L
+
+        /** Aimed more than ~37° down or up counts as sweeping the floor or ceiling. */
+        private const val SWEEP_MIN_PITCH = 0.6f
+
+        /** Walking around something: positions sampled twice a second over the last 40 s. */
+        private const val ORBIT_SAMPLE_MS = 500L
+        private const val ORBIT_SAMPLES = 80
+        private const val ORBIT_MIN_SAMPLES = 16
+        private const val ORBIT_MIN_RADIUS_M = 0.4f
+        private const val ORBIT_MIN_INWARD = 0.5f
+        private const val ORBIT_MIN_DEG = 270
 
         private const val MOVE_CHECK_MS = 2_500L
         private const val MOVE_CHECK_MIN_M = 0.06f

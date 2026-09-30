@@ -261,16 +261,21 @@ private fun TopStatus(state: ScanUiState, onBack: () -> Unit, coachOpen: Boolean
 private fun CoachCard(state: ScanUiState, onClose: () -> Unit, modifier: Modifier = Modifier) {
     val turned = state.turnedDeg >= COACH_TURN_DEG
     val walked = state.walkedM >= COACH_WALK_M
+    val swept = state.floorSweepSec >= COACH_SWEEP_SEC && state.ceilingSweepSec >= COACH_SWEEP_SEC
     val steps = listOf(
         stringResource(R.string.coach_step_floor) to state.floorFound,
         stringResource(R.string.coach_step_record) to (state.recording || state.elapsedSec > 0),
         stringResource(R.string.coach_step_turn, state.turnedDeg) to turned,
         stringResource(R.string.coach_step_walk, LengthFormat.format(state.walkedM)) to walked,
-        stringResource(R.string.coach_step_details) to (turned && walked && state.elapsedSec >= COACH_DETAIL_SEC),
+        stringResource(R.string.coach_step_sweep, state.floorSweepSec.coerceAtMost(COACH_SWEEP_SEC), state.ceilingSweepSec.coerceAtMost(COACH_SWEEP_SEC), COACH_SWEEP_SEC) to swept,
+        stringResource(R.string.coach_step_objects) to state.orbited,
+        stringResource(R.string.coach_step_details) to (turned && walked && swept && state.elapsedSec >= COACH_DETAIL_SEC),
         stringResource(R.string.coach_step_save) to false,
     )
-    val current = steps.indexOfFirst { !it.second }.let { if (it < 0) steps.size - 1 else it }
-    val covered = steps.dropLast(1).all { it.second }
+    // Walking around objects is only for rooms that have any: it never holds the rest up.
+    val optional = setOf(5)
+    val current = steps.withIndex().indexOfFirst { (i, step) -> !step.second && i !in optional }.let { if (it < 0) steps.size - 1 else it }
+    val covered = steps.dropLast(1).filterIndexed { i, _ -> i !in optional }.all { it.second }
     Column(
         modifier
             .fillMaxWidth()
@@ -323,6 +328,7 @@ private fun CoachCard(state: ScanUiState, onClose: () -> Unit, modifier: Modifie
 /** A room counts as looked around and walked when the camera has turned this far and moved this much. */
 private const val COACH_TURN_DEG = 270
 private const val COACH_WALK_M = 5f
+private const val COACH_SWEEP_SEC = 3
 private const val COACH_DETAIL_SEC = 90
 
 @Composable
