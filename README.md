@@ -13,6 +13,7 @@
 |---|---|
 | **โปรเจกต์** | แยกตามหน้างาน (ชื่อ, สถานที่, หมายเหตุ) แต่ละโปรเจกต์มีได้หลายสแกน |
 | **ปักหมุดหน้างาน** | สร้างโปรเจกต์ใหม่แล้วปักหมุดตำแหน่งปัจจุบันจาก GPS ให้อัตโนมัติ พร้อมเติมที่อยู่ให้ หรือเลือกจุดเองบนแผนที่ OpenStreetMap (ลาก/แตะ/ค้นหาที่อยู่ ต้องต่ออินเทอร์เน็ต) กดเปิดหมุดในแอปแผนที่ได้ พิกัดติดไปในหัวแบบ DXF ด้วย |
+| **ภาพถ่าย & วิดีโอ** | ถ่ายภาพหรืออัดวิดีโอหน้างานด้วยแอปกล้องของเครื่อง หรือนำเข้าจากแกลเลอรี เก็บไว้ในโปรเจกต์คู่กับสแกน (โฟลเดอร์ `media/` ชื่อไฟล์ `IMG_/VID_วันที่_เวลา`) แสดงเป็นตารางภาพย่อในหน้าโปรเจกต์ แตะเพื่อเปิดดูเต็มจอ กดค้าง (หรือเมนูมุมภาพ) เพื่อแชร์หรือลบ |
 | **สแกน 3D** | รวมภาพ depth จาก ARCore Raw Depth เป็น point cloud สี (voxel 1 ซม., ถ่วงน้ำหนักตามความมั่นใจของ depth) — มือถือที่ไม่มี Depth API จะใช้ feature points แทน (ห่างกว่า) |
 | **อัดวิดีโอ → สร้าง 3D** | ระหว่างสแกนแอปอัดภาพ ตำแหน่งกล้อง และ depth ของทุก keyframe ไว้ พอบันทึกจึงสร้าง point cloud และโมเดล 3D สีจริงจากวิดีโอนั้นด้วยทุกเฟรม (TSDF voxel 2 ซม. + surface nets, ตัดเศษลอย ๆ ทิ้ง) แล้วนำภาพถ่ายจริงจากเฟรมที่อัดไว้แปะลงบนผิวโมเดล (photo texture ซึ่งติดไปกับไฟล์ GLB ที่ส่งออกด้วย โดยปรับแสง/สีของแต่ละแผ่นภาพให้เท่ากันตรงรอยต่อ) สร้างใหม่ได้ทุกเมื่อ ส่งออกวิดีโอเป็น ZIP พร้อมไฟล์ตำแหน่งกล้องสำหรับ COLMAP / Postshot / nerfstudio และมี `reconstruct.jar` สำหรับสร้างบนคอม — โมเดลในเครื่องต้องใช้มือถือที่รองรับ ARCore Depth API |
 | **วัดระยะ AR** | เล็งเป้ากลางจอ กด *วัดระยะ* 2 ครั้ง ได้ระยะจุดต่อจุดเป็น มม. (ยึดด้วย ARCore Anchor) ตั้งชื่อระยะได้ เช่น "ความกว้างประตู" |
@@ -111,7 +112,7 @@ core/   Kotlin/JVM ล้วน (ไม่พึ่ง Android) — ทดสอ
                DoorSwingDetector (ทิศเปิดประตู), OpeningPlacement (เพิ่มช่องเปิดเอง), ElevationBuilder (รูปด้าน),
                SiteAlignment (ระบบพิกัดงาน)
   export/      Ply, Pts, DxfDocument + FloorPlanDxf + ElevationDxf, WallsObj, MeasurementCsv, OpeningCsv
-  project/     Project/ScanInfo/Measurement + ProjectRepository (ไฟล์ JSON + PLY)
+  project/     Project/ScanInfo/Measurement/MediaItem + ProjectRepository (ไฟล์ JSON + PLY + media/)
   viewer/      OrbitCamera
 app/    Android (Jetpack Compose + ARCore + OpenGL ES 2)
   scan/        ScanActivity (ARCore session), ScanRenderer (GL thread: กล้อง, จุด, วัดระยะ),
@@ -121,7 +122,8 @@ app/    Android (Jetpack Compose + ARCore + OpenGL ES 2)
   data/        ScanAnalysis (โหลด/แคช cloud + แปลน), ExportManager (เขียนไฟล์ + แชร์)
 ```
 
-ข้อมูลเก็บในเครื่องที่ `files/projects/<projectId>/project.json` และ `scan_<id>.ply`
+ข้อมูลเก็บในเครื่องที่ `files/projects/<projectId>/project.json`, `scan_<id>.ply`
+และภาพถ่าย/วิดีโอใน `media/` ของโปรเจกต์นั้น (ลบโปรเจกต์แล้วหายทั้งโฟลเดอร์)
 (point cloud เก็บในพิกัด ARCore ของ session นั้น; แปลงเป็นพิกัดงานตอนส่งออก)
 
 ### หลักการทำงานโดยย่อ
@@ -169,6 +171,7 @@ GitHub Actions (`.github/workflows/android.yml`) รัน test และ build 
 - [x] สร้าง depth จากภาพเอง (plane-sweep stereo) บนเครื่องที่ไม่มี Depth API — ได้เฉพาะผิวที่มีลวดลาย
 - [x] แปะภาพถ่ายจริงจากวิดีโอลงบนโมเดล (photo texture) และเติมพื้น/ฝ้าจากระนาบที่ ARCore หาได้
 - [x] ปรับสี/แสงให้กลืนกันระหว่างรอยต่อของภาพ (seam leveling) — วัดความต่างของสีสองฝั่งของทุกรอยต่อ แล้วแก้ค่าแสงของแต่ละแผ่นภาพให้เท่ากันก่อนวางลง atlas
+- [x] ถ่ายภาพ / อัดวิดีโอหน้างาน หรือนำเข้าจากแกลเลอรี เก็บไว้ในโปรเจกต์คู่กับสแกน
 - [ ] วัดระยะจาก point cloud / โมเดลในหน้า 3D
 - [ ] ปรับเทียบสเกลด้วยระยะอ้างอิงที่วัดจริง (เช่น เลเซอร์) เพื่อลดความคลาดเคลื่อน
 - [ ] สำรองข้อมูล/ซิงก์ขึ้น cloud และแชร์โปรเจกต์ในทีม

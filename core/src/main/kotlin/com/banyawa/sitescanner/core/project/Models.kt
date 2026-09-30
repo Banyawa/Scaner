@@ -67,6 +67,22 @@ data class GeoPin(
     val coordinates: String get() = String.format(java.util.Locale.US, "%.6f, %.6f", latitude, longitude)
 }
 
+enum class MediaKind { PHOTO, VIDEO }
+
+/**
+ * A photo or video of the site, taken with the phone's camera app or imported from the
+ * gallery. The file lives in the project's media folder (see [ProjectRepository.mediaFile]).
+ */
+@Serializable
+data class MediaItem(
+    val id: String,
+    /** File name inside the project's media folder, e.g. `IMG_20260930_101500.jpg`. */
+    val fileName: String,
+    val kind: MediaKind,
+    val createdAt: Long,
+    val note: String? = null,
+)
+
 @Serializable
 data class Project(
     val id: String,
@@ -78,6 +94,10 @@ data class Project(
     val updatedAt: Long,
     val scans: List<ScanInfo> = emptyList(),
     val pin: GeoPin? = null,
+    /** Photos and videos of the site, oldest first. */
+    val media: List<MediaItem> = emptyList(),
 ) {
     fun scan(id: String): ScanInfo? = scans.firstOrNull { it.id == id }
+
+    fun mediaItem(id: String): MediaItem? = media.firstOrNull { it.id == id }
 }

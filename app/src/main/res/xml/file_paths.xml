@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <cache-path name="exports" path="exports/" />
+    <!-- Project photos and videos (files/projects/<id>/media/), written by the camera app and opened by viewers. -->
+    <files-path name="projects" path="projects/" />
 </paths>

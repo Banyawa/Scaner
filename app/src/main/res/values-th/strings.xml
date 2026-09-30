@@ -10,8 +10,10 @@
     <string name="action_discard">ทิ้ง</string>
     <string name="action_export">ส่งออก</string>
     <string name="action_floor_plan">แปลนพื้น</string>
+    <string name="action_open">เปิด</string>
     <string name="action_retry">ลองอีกครั้ง</string>
     <string name="action_save">บันทึก</string>
+    <string name="action_share">แชร์</string>
     <string name="action_view_3d">ดู 3 มิติ</string>
 
     <!-- Projects -->
@@ -23,7 +25,7 @@
     <string name="project_created">สร้างเมื่อ %1$s</string>
     <string name="project_missing">ไม่พบโปรเจกต์</string>
     <string name="project_delete_title">ลบโปรเจกต์?</string>
-    <string name="project_delete_message">\"%1$s\" และสแกนทั้งหมดจะถูกลบถาวร</string>
+    <string name="project_delete_message">\"%1$s\" รวมทั้งสแกน ภาพถ่าย และวิดีโอทั้งหมดจะถูกลบถาวร</string>
     <string name="pin_none">ยังไม่ได้ปักหมุด</string>
     <string name="pin_locating">กำลังหาตำแหน่ง…</string>
     <string name="pin_improving">กำลังปรับให้แม่นขึ้น…</string>
@@ -64,6 +66,27 @@
     <string name="scan_delete_message">\"%1$s\" จะถูกลบถาวร</string>
     <string name="scan_mode_depth">Depth</string>
     <string name="scan_mode_features">จุด Feature</string>
+
+    <!-- Photos & videos -->
+    <string name="media_section_title">ภาพถ่าย &amp; วิดีโอ</string>
+    <string name="media_take_photo">ถ่ายภาพ</string>
+    <string name="media_record_video">อัดวิดีโอ</string>
+    <string name="media_import">จากแกลเลอรี</string>
+    <string name="media_empty">ยังไม่มีภาพถ่ายหรือวิดีโอ ถ่ายหน้างานเก็บไว้คู่กับสแกนได้เลย</string>
+    <plurals name="media_count">
+        <item quantity="other">%d ภาพ/วิดีโอ</item>
+    </plurals>
+    <string name="media_photo">ภาพถ่าย</string>
+    <string name="media_video">วิดีโอ</string>
+    <string name="media_more">เพิ่มเติม</string>
+    <string name="media_camera_permission">ต้องอนุญาตให้ใช้กล้องเพื่อถ่ายภาพและวิดีโอ</string>
+    <string name="media_no_camera_app">ไม่พบแอปกล้องในเครื่องนี้</string>
+    <string name="media_no_viewer_app">ไม่มีแอปในเครื่องที่เปิดไฟล์นี้ได้</string>
+    <string name="media_import_failed">นำเข้าบางไฟล์ไม่สำเร็จ</string>
+    <string name="media_delete_photo_title">ลบภาพถ่าย?</string>
+    <string name="media_delete_video_title">ลบวิดีโอ?</string>
+    <string name="media_delete_message">\"%1$s\" จะถูกลบถาวร</string>
+    <string name="media_share_title">แชร์ภาพถ่าย / วิดีโอ</string>
 
     <!-- Scanning (AR) -->
     <string name="scan_status_starting">กำลังเริ่ม AR…</string>
