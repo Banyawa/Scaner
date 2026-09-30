@@ -242,4 +242,14 @@
     <string name="coach_step_details">Cover corners, under and behind furniture, doors and windows</string>
     <string name="coach_step_save">Press ✓ to save, then wait for the 3D model</string>
     <string name="coach_ready">All covered! Press ✓ to save, or keep recording into the next room.</string>
+    <!-- Captions of the scanning demonstration video, one per scene -->
+    <string-array name="scan_video_captions">
+        <item>Hold the phone upright at chest height, not tilted far down or up.</item>
+        <item>Walk sideways along the wall, 1–2 m away from it.</item>
+        <item>Do not turn on the spot: the camera gets no proper look at anything.</item>
+        <item>Give corners a slow look, and crouch to see under and behind furniture.</item>
+        <item>Walk through the door into the next room without stopping the recording.</item>
+        <item>Avoid aiming at glass and mirrors for long; good light helps a lot.</item>
+        <item>Press ✓ to save, then wait for the 3D model.</item>
+    </string-array>
 </resources>

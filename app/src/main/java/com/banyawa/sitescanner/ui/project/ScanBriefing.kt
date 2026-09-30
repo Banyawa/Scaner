@@ -28,9 +28,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.banyawa.sitescanner.R
+import com.banyawa.sitescanner.ui.common.HowToVideo
 
 /**
- * The briefing before a scan: how to walk a room so the model comes out well. Shown until
+ * The briefing before a scan: the demonstration video and how to walk a room so the model
+ * comes out well. Shown until
  * the user ticks "don't show again" ([com.banyawa.sitescanner.scan.ScanGuidePrefs]); the
  * scan screen's coach repeats the steps live.
  */
@@ -44,6 +46,7 @@ fun ScanBriefingDialog(onStart: (dontShowAgain: Boolean) -> Unit, onDismiss: () 
         title = { Text(stringResource(R.string.scan_briefing_title)) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                HowToVideo()
                 tips.forEachIndexed { i, tip ->
                     Row(verticalAlignment = Alignment.Top) {
                         Text("${i + 1}.", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, modifier = Modifier.width(24.dp))

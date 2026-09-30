@@ -59,6 +59,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.banyawa.sitescanner.R
+import com.banyawa.sitescanner.ui.common.HowToVideo
 
 /** How each line of a list is marked. */
 internal enum class LineMarker { DOT, NUMBER, CHECK, CROSS }
@@ -70,6 +71,9 @@ private sealed class GuideBlock {
 
     /** Two arrays of the same length: a bold name and the explanation under it. */
     class Pairs(@ArrayRes val names: Int, @ArrayRes val bodies: Int) : GuideBlock()
+
+    /** The scanning demonstration video with its captions. */
+    data object Video : GuideBlock()
 }
 
 private class GuideSection(val icon: ImageVector, @StringRes val title: Int, val blocks: List<GuideBlock>)
@@ -85,6 +89,7 @@ private val Sections = listOf(
     GuideSection(
         Icons.Filled.DirectionsWalk, R.string.guide_scan_title,
         listOf(
+            GuideBlock.Video,
             GuideBlock.Paragraph(R.string.guide_scan_text),
             GuideBlock.Lines(R.array.guide_scan_steps, LineMarker.NUMBER),
             GuideBlock.Heading(R.string.guide_do),
@@ -188,6 +193,7 @@ private fun SectionCard(section: GuideSection) {
 @Composable
 private fun BlockView(block: GuideBlock) {
     when (block) {
+        is GuideBlock.Video -> HowToVideo(Modifier.padding(bottom = 4.dp))
         is GuideBlock.Paragraph -> Text(stringResource(block.text), style = MaterialTheme.typography.bodyMedium)
         is GuideBlock.Heading -> Text(
             stringResource(block.text),
