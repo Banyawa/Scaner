@@ -71,6 +71,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -80,6 +81,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -115,10 +117,14 @@ import com.banyawa.sitescanner.core.geometry.Bounds2
 import com.banyawa.sitescanner.core.geometry.Vec2
 import com.banyawa.sitescanner.core.project.Project
 import com.banyawa.sitescanner.core.project.ScanInfo
+import com.banyawa.sitescanner.core.scene.CeilingMap
+import com.banyawa.sitescanner.core.scene.SceneLayers
+import com.banyawa.sitescanner.core.scene.SceneObject
 import com.banyawa.sitescanner.core.units.LengthFormat
 import com.banyawa.sitescanner.data.ExportEvent
 import com.banyawa.sitescanner.data.ExportFormat
 import com.banyawa.sitescanner.data.ExportManager
+import com.banyawa.sitescanner.ui.common.formatMetres
 import com.banyawa.sitescanner.ui.theme.PlanColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -134,6 +140,7 @@ import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /** A measurement projected into plan coordinates. */
 class PlanMeasurement(val start: Vec2, val end: Vec2, val text: String)
@@ -149,6 +156,8 @@ sealed interface PlanState {
         val measurements: List<PlanMeasurement>,
         /** Null while they are being worked out. */
         val elevations: List<Elevation>? = null,
+        /** The surface model's floor / ceiling / walls / objects; null without a model or while being worked out. */
+        val scene: SceneLayers? = null,
     ) : PlanState {
         val openings: List<Opening> get() = result.plan.openings
         val tags: Map<String, String> by lazy { OpeningTags.assign(openings) }
@@ -175,7 +184,9 @@ sealed interface PlanState {
             ?.minByOrNull { it.second }
             ?.first
 
-        fun withElevations(elevations: List<Elevation>?) = Loaded(project, scan, result, slicePoints, measurements, elevations)
+        fun withElevations(elevations: List<Elevation>?) = Loaded(project, scan, result, slicePoints, measurements, elevations, scene)
+
+        fun withScene(scene: SceneLayers?) = Loaded(project, scan, result, slicePoints, measurements, elevations, scene)
     }
 }
 
@@ -244,6 +255,18 @@ class FloorPlanViewModel(private val projectId: String, private val scanId: Stri
             baseElevations = base
             val current = _state.value as? PlanState.Loaded ?: return@launch
             _state.value = current.withElevations(ElevationBuilder.attach(base, current.result.plan, current.scan.measurements))
+
+            // Objects and ceiling heights come from the surface model, when the scan has one.
+            val scene = try {
+                app.analysis.sceneLayers(projectId, scan)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            if (scene == null) return@launch
+            val latest = _state.value as? PlanState.Loaded ?: return@launch
+            _state.value = latest.withScene(scene)
         }
     }
 
@@ -284,7 +307,7 @@ class FloorPlanViewModel(private val projectId: String, private val scanId: Stri
     private suspend fun save(loaded: PlanState.Loaded, scan: ScanInfo, result: FloorPlanResult) {
         val project = withContext(Dispatchers.IO) { app.repository.upsertScan(projectId, scan) }
         val elevations = baseElevations?.let { ElevationBuilder.attach(it, result.plan, scan.measurements) }
-        _state.value = PlanState.Loaded(project, scan, result, loaded.slicePoints, loaded.measurements, elevations)
+        _state.value = PlanState.Loaded(project, scan, result, loaded.slicePoints, loaded.measurements, elevations, loaded.scene)
     }
 
     fun export(format: ExportFormat) {
@@ -329,6 +352,8 @@ fun FloorPlanScreen(projectId: String, scanId: String, onBack: () -> Unit) {
     var editing by remember { mutableStateOf<OpeningDraft?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
     var elevationKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var showObjects by rememberSaveable { mutableStateOf(true) }
+    var showCeiling by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val missedWall = stringResource(R.string.plan_add_miss)
 
@@ -390,10 +415,32 @@ fun FloorPlanScreen(projectId: String, scanId: String, onBack: () -> Unit) {
                     }
                     if (tab == 0) {
                         PlanSummary(s)
+                        val scene = s.scene
+                        if (scene != null) {
+                            Row(
+                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                FilterChip(
+                                    selected = showObjects,
+                                    onClick = { showObjects = !showObjects },
+                                    label = { Text(stringResource(R.string.scene_objects_title, scene.objects.size)) },
+                                )
+                                if (scene.ceiling != null) {
+                                    FilterChip(
+                                        selected = showCeiling,
+                                        onClick = { showCeiling = !showCeiling },
+                                        label = { Text(stringResource(R.string.scene_ceiling_heights)) },
+                                    )
+                                }
+                            }
+                        }
                         Box(Modifier.weight(1f).fillMaxWidth()) {
                             PlanCanvas(
                                 s,
                                 resetToken,
+                                showObjects = showObjects,
+                                showCeiling = showCeiling,
                                 onTap = { p, radius, tagOffset, keyOffset ->
                                     val elevation = if (adding) null else s.elevationAt(p, radius.coerceAtLeast(MIN_WALL_PICK), keyOffset)
                                     if (elevation != null) {
@@ -465,7 +512,7 @@ fun FloorPlanScreen(projectId: String, scanId: String, onBack: () -> Unit) {
                             0 -> PLAN_FORMATS
                             1 -> OPENING_FORMATS
                             else -> ELEVATION_FORMATS
-                        },
+                        }.filter { !it.needsMesh || s.scan.hasMesh },
                         onExport = vm::export,
                     )
                 }
@@ -507,7 +554,8 @@ private val KEY_OFFSET = 46.dp
 private val KEY_RADIUS = 11.dp
 private val PLAN_PADDING = 64.dp
 
-private val PLAN_FORMATS = listOf(ExportFormat.DXF_PLAN, ExportFormat.OBJ_WALLS, ExportFormat.PTS, ExportFormat.PLY)
+private val PLAN_FORMATS =
+    listOf(ExportFormat.DXF_PLAN, ExportFormat.CSV_OBJECTS, ExportFormat.OBJ_WALLS, ExportFormat.PTS, ExportFormat.PLY)
 private val OPENING_FORMATS = listOf(ExportFormat.CSV_OPENINGS, ExportFormat.DXF_PLAN)
 private val ELEVATION_FORMATS = listOf(ExportFormat.DXF_ELEVATIONS, ExportFormat.DXF_PLAN)
 
@@ -527,6 +575,17 @@ private fun PlanSummary(s: PlanState.Loaded) {
             )
             SummaryItem(stringResource(R.string.plan_doors), s.openings.count { it.type != OpeningType.WINDOW }.toString())
             SummaryItem(stringResource(R.string.plan_windows), s.openings.count { it.type == OpeningType.WINDOW }.toString())
+            val scene = s.scene
+            if (scene != null) {
+                SummaryItem(stringResource(R.string.scene_summary_objects), scene.objects.size.toString())
+                val ceiling = scene.ceiling
+                if (ceiling != null && !ceiling.typicalHeight.isNaN()) {
+                    SummaryItem(stringResource(R.string.scene_summary_ceiling), LengthFormat.format(ceiling.typicalHeight))
+                }
+                if (ceiling != null && !ceiling.minHeight.isNaN()) {
+                    SummaryItem(stringResource(R.string.scene_summary_min_clearance), LengthFormat.format(ceiling.minHeight))
+                }
+            }
         }
     }
 }
@@ -950,16 +1009,24 @@ private const val MAX_MM_DIGITS = 6
 /**
  * Plan drawing: world (metres, Y north) to screen: x' = ox + x·s, y' = oy − y·s.
  * [onTap] gets the plan point, the tap radius and the offsets of opening tags and elevation
- * keys from their walls, all in metres at the current zoom.
+ * keys from their walls, all in metres at the current zoom. [showObjects] draws the objects'
+ * footprints and boxes, [showCeiling] tints the plan by the ceiling height map.
  */
 @Composable
 private fun PlanCanvas(
     s: PlanState.Loaded,
     resetToken: Int,
+    showObjects: Boolean,
+    showCeiling: Boolean,
     onTap: (point: Vec2, radius: Float, tagOffset: Float, keyOffset: Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val plan = s.result.plan
+    val objects = if (showObjects) s.scene?.objects.orEmpty() else emptyList()
+    val ceiling = s.scene?.ceiling?.takeIf { showCeiling }
+    val tint = remember(ceiling) { ceiling?.let { ceilingTintPaths(it) }.orEmpty() }
+    val minHeight = ceiling?.minHeight?.takeUnless { it.isNaN() }
+    val minText = if (minHeight != null) stringResource(R.string.scene_ceiling_min_label, formatMetres(minHeight)) else ""
     val bounds = remember(s.result) {
         val wallBounds = plan.bounds()
         val sliceBounds = Bounds2.of(s.slicePoints.map { Vec2(it.x, it.y) })
@@ -995,6 +1062,9 @@ private fun PlanCanvas(
     val doorStyle = TextStyle(color = PlanColors.Door, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     val windowStyle = TextStyle(color = PlanColors.Window, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     val keyStyle = TextStyle(color = PlanColors.ElevationKey, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    val objectStyle = TextStyle(color = PlanColors.ObjectLine, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    val objectSizeStyle = TextStyle(color = PlanColors.ObjectLine, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+    val ceilingStyle = TextStyle(color = PlanColors.CeilingLow, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
 
     Canvas(
         modifier
@@ -1032,6 +1102,7 @@ private fun PlanCanvas(
             if (s.slicePoints.isNotEmpty()) {
                 drawPoints(s.slicePoints, PointMode.Points, PlanColors.Slice, strokeWidth = 2.5f / scale, cap = StrokeCap.Round)
             }
+            for ((color, path) in tint) drawPath(path, color)
             for (w in plan.walls) {
                 drawLine(
                     PlanColors.Wall,
@@ -1051,6 +1122,7 @@ private fun PlanCanvas(
                     pathEffect = PathEffect.dashPathEffect(floatArrayOf(8.dp.toPx() / scale, 5.dp.toPx() / scale)),
                 )
             }
+            for (o in objects) drawObject(o, scale)
         }
 
         fun toScreen(p: Vec2) = Offset(ox + p.x * scale, oy - p.y * scale)
@@ -1079,6 +1151,20 @@ private fun PlanCanvas(
             drawCircle(PlanColors.ElevationKey, radius = KEY_RADIUS.toPx(), center = at, style = Stroke(width = 1.5.dp.toPx()))
             val layout = textMeasurer.measure(e.key, keyStyle)
             drawText(layout, topLeft = Offset(at.x - layout.size.width / 2f, at.y - layout.size.height / 2f))
+        }
+        // Object tags with their box sizes, in millimetres like the walls.
+        for (o in objects) {
+            val at = toScreen(o.box.centre)
+            drawLabel(textMeasurer, "M${o.id}", at - Offset(0f, 7.dp.toPx()), objectStyle)
+            val dims = "${LengthFormat.toMillimeters(o.box.length)} × ${LengthFormat.toMillimeters(o.box.width)}"
+            drawLabel(textMeasurer, dims, at + Offset(0f, 8.dp.toPx()), objectSizeStyle)
+        }
+        // The lowest point overhead (a beam, a duct) on the ceiling height map.
+        val minAt = ceiling?.minAt
+        if (minAt != null && minText.isNotEmpty()) {
+            val at = toScreen(minAt)
+            drawCircle(PlanColors.CeilingLow, radius = 5.dp.toPx(), center = at, style = Stroke(width = 2.dp.toPx()))
+            drawLabel(textMeasurer, minText, at + Offset(0f, 14.dp.toPx()), ceilingStyle)
         }
     }
 }
@@ -1133,6 +1219,62 @@ private fun DrawScope.drawOpening(o: Opening, scale: Float) {
 }
 
 private const val ARC_STEPS = 24
+
+/** An object seen from above: its footprint filled, its box dashed (plan metres, inside the plan transform). */
+private fun DrawScope.drawObject(o: SceneObject, scale: Float) {
+    if (o.footprint.size >= 3) {
+        val footprint = Path().apply {
+            moveTo(o.footprint[0].x, o.footprint[0].y)
+            for (i in 1 until o.footprint.size) lineTo(o.footprint[i].x, o.footprint[i].y)
+            close()
+        }
+        drawPath(footprint, PlanColors.ObjectFill)
+        drawPath(footprint, PlanColors.ObjectLine, style = Stroke(width = 1.5.dp.toPx() / scale))
+    }
+    val corners = o.box.corners()
+    val box = Path().apply {
+        moveTo(corners[0].x, corners[0].y)
+        for (i in 1 until corners.size) lineTo(corners[i].x, corners[i].y)
+        close()
+    }
+    drawPath(
+        box,
+        PlanColors.ObjectLine,
+        style = Stroke(
+            width = 1.dp.toPx() / scale,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx() / scale, 4.dp.toPx() / scale)),
+        ),
+    )
+}
+
+/** Steps of the ceiling tint from [PlanColors.CeilingLow] to [PlanColors.CeilingHigh]. */
+private const val CEILING_STEPS = 9
+
+/** Cells this far under / over the typical height are the reddest / bluest. */
+private const val CEILING_RANGE = 0.5f
+
+/**
+ * The ceiling map's seen cells as one path per colour step (plan metres): blue where the
+ * ceiling is high, red where something hangs low, around its typical height.
+ */
+private fun ceilingTintPaths(ceiling: CeilingMap): List<Pair<Color, Path>> {
+    if (ceiling.typicalHeight.isNaN()) return emptyList()
+    val paths = List(CEILING_STEPS) { Path() }
+    for (row in 0 until ceiling.rows) {
+        for (col in 0 until ceiling.cols) {
+            val h = ceiling.heightAt(col, row)
+            if (h.isNaN()) continue
+            val t = ((h - ceiling.typicalHeight) / CEILING_RANGE).coerceIn(-1f, 1f)
+            val step = ((t + 1f) / 2f * (CEILING_STEPS - 1)).roundToInt()
+            val x = ceiling.originX + col * ceiling.cell
+            val y = ceiling.originY + row * ceiling.cell
+            paths[step].addRect(Rect(x, y, x + ceiling.cell, y + ceiling.cell))
+        }
+    }
+    return paths.mapIndexed { i, path ->
+        lerp(PlanColors.CeilingLow, PlanColors.CeilingHigh, i / (CEILING_STEPS - 1f)).copy(alpha = 0.35f) to path
+    }
+}
 
 private fun DrawScope.drawGrid(ox: Float, oy: Float, scale: Float) {
     // 1 m grid, or 5 m when zoomed far out.

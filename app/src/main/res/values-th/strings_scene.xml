@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ชั้นของฉาก (พื้น / ฝ้า / ผนัง / วัตถุ) ในหน้า 3D และแปลน กับการส่งออกตารางวัตถุ CSV — ชุด key ต้องตรงกับ values/strings_scene.xml -->
+<resources>
+    <!-- Layer chips in the 3D viewer -->
+    <string name="scene_layer_floor">พื้น</string>
+    <string name="scene_layer_ceiling">ฝ้า</string>
+    <string name="scene_layer_walls">ผนัง</string>
+    <string name="scene_layer_objects">วัตถุ</string>
+    <string name="scene_object_boxes">กล่องวัตถุ</string>
+
+    <!-- Objects panel under the viewer -->
+    <string name="scene_objects_title">วัตถุ (%1$d)</string>
+    <string name="scene_objects_empty">ไม่พบวัตถุลอยตัวในสแกนนี้</string>
+    <string name="scene_objects_expand">แสดงรายการวัตถุ</string>
+    <string name="scene_objects_collapse">ซ่อนรายการวัตถุ</string>
+    <string name="scene_wall_clearance">ห่างผนัง %1$s</string>
+    <string name="scene_object_detail">สูงจากพื้น %1$s–%2$s · พื้นที่ฐาน %3$s ตร.ม.</string>
+    <string name="scene_floor_area">พื้น %1$s ตร.ม.</string>
+    <string name="scene_ceiling_height">ฝ้า %1$s</string>
+    <string name="scene_min_clearance">จุดต่ำสุดเหนือหัว %1$s</string>
+
+    <!-- Plan: summary rows, option chips and the ceiling height map -->
+    <string name="scene_summary_objects">วัตถุ</string>
+    <string name="scene_summary_ceiling">ฝ้า (ทั่วไป)</string>
+    <string name="scene_summary_min_clearance">จุดต่ำสุดเหนือหัว</string>
+    <string name="scene_ceiling_heights">ความสูงฝ้า</string>
+    <string name="scene_ceiling_min_label">ต่ำสุด %1$s m</string>
+
+    <!-- Export -->
+    <string name="export_objects_csv">ตารางวัตถุ CSV</string>
+</resources>

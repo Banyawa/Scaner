@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Scene layers (floor / ceiling / walls / objects) in the 3D viewer and the plan, and the objects CSV export. Thai copy: values-th/strings_scene.xml. -->
+<resources>
+    <!-- Layer chips in the 3D viewer -->
+    <string name="scene_layer_floor">Floor</string>
+    <string name="scene_layer_ceiling">Ceiling</string>
+    <string name="scene_layer_walls">Walls</string>
+    <string name="scene_layer_objects">Objects</string>
+    <string name="scene_object_boxes">Object boxes</string>
+
+    <!-- Objects panel under the viewer -->
+    <string name="scene_objects_title">Objects (%1$d)</string>
+    <string name="scene_objects_empty">No free-standing objects were found in this scan</string>
+    <string name="scene_objects_expand">Show the objects</string>
+    <string name="scene_objects_collapse">Hide the objects</string>
+    <string name="scene_wall_clearance">%1$s from wall</string>
+    <string name="scene_object_detail">%1$s–%2$s above the floor · footprint %3$s m²</string>
+    <string name="scene_floor_area">Floor %1$s m²</string>
+    <string name="scene_ceiling_height">Ceiling %1$s</string>
+    <string name="scene_min_clearance">Lowest overhead %1$s</string>
+
+    <!-- Plan: summary rows, option chips and the ceiling height map -->
+    <string name="scene_summary_objects">Objects</string>
+    <string name="scene_summary_ceiling">Ceiling (typical)</string>
+    <string name="scene_summary_min_clearance">Lowest overhead</string>
+    <string name="scene_ceiling_heights">Ceiling heights</string>
+    <string name="scene_ceiling_min_label">min %1$s m</string>
+
+    <!-- Export -->
+    <string name="export_objects_csv">Objects CSV</string>
+</resources>
