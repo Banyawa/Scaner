@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Apartment
 import androidx.compose.material.icons.filled.Delete
@@ -91,7 +92,7 @@ class ProjectListViewModel(private val repository: ProjectRepository) : ViewMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProjectListScreen(onOpenProject: (String) -> Unit) {
+fun ProjectListScreen(onOpenProject: (String) -> Unit, onOpenGuide: () -> Unit) {
     val context = LocalContext.current
     val vm: ProjectListViewModel = viewModel { ProjectListViewModel(context.app.repository) }
     val projects by vm.projects.collectAsStateWithLifecycle()
@@ -102,7 +103,14 @@ fun ProjectListScreen(onOpenProject: (String) -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text(stringResource(R.string.app_name)) })
+            TopAppBar(
+                title = { Text(stringResource(R.string.app_name)) },
+                actions = {
+                    IconButton(onClick = onOpenGuide) {
+                        Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = stringResource(R.string.guide_title))
+                    }
+                },
+            )
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
