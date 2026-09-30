@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- First-launch intro (intro_*) and the in-app user guide (guide_*). Thai copy: values-th/strings_guide.xml. -->
+<resources>
+    <!-- Intro: first-launch walkthrough -->
+    <string name="intro_skip">Skip</string>
+    <string name="intro_next">Next</string>
+    <string name="intro_get_started">Get started</string>
+
+    <string name="intro_1_title">Scan a site in 3D with your phone</string>
+    <string-array name="intro_1_lines">
+        <item>Walk through a room or site with the phone in your hand; the app records what the camera sees.</item>
+        <item>You get a 3D model in real colours, a floor plan, wall elevations and measurements.</item>
+        <item>Sizes go straight into shop drawings: DXF for CAD, 3D files and tables.</item>
+        <item>Everything runs on the phone, offline. Internet is only needed to pick the site pin on the map.</item>
+    </string-array>
+
+    <string name="intro_2_title">What you need</string>
+    <string-array name="intro_2_lines">
+        <item>An Android phone that supports ARCore (Google Play Services for AR; the app helps install it).</item>
+        <item>Depth API gives the best result. Without it only patterned surfaces reconstruct; measurements still work.</item>
+        <item>Good light: turn on the room lights and open the curtains.</item>
+        <item>About 1–3 minutes per room.</item>
+        <item>Free storage: the recording of one room takes roughly 100–300 MB.</item>
+    </string-array>
+
+    <string name="intro_3_title">The workflow</string>
+    <string-array name="intro_3_lines">
+        <item>Create a project: a name and the site\'s location pin.</item>
+        <item>Open it and tap Scan.</item>
+        <item>Press the round Record button and walk the room.</item>
+        <item>Press ✓ to save the scan.</item>
+        <item>Wait for Generate 3D model: it runs in the background, you can keep using the app.</item>
+        <item>Open the scan for the 3D model, the floor plan, elevations and measurements.</item>
+        <item>Export or share the files you need.</item>
+    </string-array>
+
+    <string name="intro_4_title">How to scan well</string>
+    <string-array name="intro_4_lines">
+        <item>Hold the phone upright at chest height and move slowly and smoothly.</item>
+        <item>Walk sideways along each wall, 1–2 m from the surface, rather than turning on the spot.</item>
+        <item>Cover the corners, under and behind furniture, and both sides of door and window reveals.</item>
+        <item>Keep recording while you walk through a door into the next room.</item>
+        <item>Don\'t point at glass, mirrors or bare white walls for long, and don\'t cover the camera.</item>
+        <item>If the app says slow down, add light or step sideways, do that.</item>
+    </string-array>
+
+    <string name="intro_5_title">After the scan</string>
+    <string-array name="intro_5_lines">
+        <item>3D view: one finger rotates, two fingers pan, pinch to zoom. Switch between the model and the points.</item>
+        <item>Floor plan: walls with lengths, doors and windows found automatically. Tap one to correct it, or + to add one.</item>
+        <item>Elevations: one drawing per wall seen from inside the room, with openings and measurements.</item>
+        <item>Measurements taken during the scan are listed on the scan card; tap one to name it.</item>
+        <item>Generate 3D model again any time, e.g. after an app update. The recording ZIP also rebuilds on a PC with the desktop tool.</item>
+    </string-array>
+
+    <string name="intro_6_title">Photos, exports and help</string>
+    <string-array name="intro_6_lines">
+        <item>Keep site photos and videos in the project next to the scans.</item>
+        <item>Export DXF plan and elevations for CAD, GLB / OBJ / PLY 3D models, CSV tables and the recording ZIP for COLMAP, Postshot or nerfstudio.</item>
+        <item>Share straight to LINE, Gmail or Drive.</item>
+        <item>Need this again? The ? icon on the project list opens the user guide.</item>
+        <item>The scan screen has its own coach with tips while you scan.</item>
+    </string-array>
+
+    <!-- User guide -->
+    <string name="guide_title">User guide</string>
+    <string name="guide_lead">Tap a topic to open it.</string>
+    <string name="guide_do">Do</string>
+    <string name="guide_dont">Don\'t</string>
+    <string name="guide_show_intro">Show the intro again</string>
+    <string name="guide_version">Version %1$s</string>
+
+    <string name="guide_start_title">Getting started</string>
+    <string name="guide_start_text">Each job site is a project. A project holds any number of scans plus photos and videos of the site.</string>
+    <string-array name="guide_start_steps">
+        <item>Tap New project and type a name. The site is pinned where you stand (or pick it on the map); the address fills in by itself.</item>
+        <item>Open the project and tap Scan. Allow the camera; if Google Play Services for AR is missing the app installs it.</item>
+        <item>Move the phone slowly until the status says Ready, then press the round Record button.</item>
+        <item>Walk the room (see Scanning technique), then press ✓ and name the scan.</item>
+        <item>The 3D model is generated in the background; the progress shows on the scan card. For a large room or several rooms make several scans.</item>
+    </string-array>
+
+    <string name="guide_scan_title">Scanning technique</string>
+    <string name="guide_scan_text">Depth is measured 1–3 m from surfaces, and the plan is built from what the camera sees between knee and head height. Slow, even movement gives a clean model.</string>
+    <string-array name="guide_scan_steps">
+        <item>Hold the phone upright at chest height and move slowly and smoothly.</item>
+        <item>Walk sideways along each wall, 1–2 m away, instead of turning on the spot. Phones without Depth API need this movement to measure depth.</item>
+        <item>Show every wall from floor to ceiling, plus the floor and the ceiling itself.</item>
+        <item>Cover corners, under and behind furniture, and both jambs of each door and window with the wall above it (and below a window).</item>
+        <item>Doors: leave them open about 30°–150° and scan the whole leaf so the swing is detected. A closed door reads as wall.</item>
+        <item>Keep recording while walking through a door to the next room, or make one scan per room.</item>
+        <item>Measure critical sizes with the Measure button during the scan and name them afterwards.</item>
+    </string-array>
+    <string-array name="guide_scan_do">
+        <item>Turn on all the lights; open curtains and blinds.</item>
+        <item>Stay 1–2 m from walls; go closer for details such as sockets and pipes.</item>
+        <item>Watch the point count on screen keep rising.</item>
+        <item>Follow the on-screen hints: slow down, add light, step sideways.</item>
+    </string-array>
+    <string-array name="guide_scan_dont">
+        <item>Turn quickly or swing the phone around.</item>
+        <item>Point at glass, mirrors, shiny or bare white surfaces for long (tape or paper on the wall helps).</item>
+        <item>Cover the camera with a finger.</item>
+        <item>Stand still and pan the camera around the room.</item>
+        <item>Get further than 4 m from surfaces: depth beyond that is not kept.</item>
+    </string-array>
+
+    <string name="guide_model_title">Generating and viewing the 3D model</string>
+    <string-array name="guide_model_lines">
+        <item>After you save, the app builds a point cloud and a colour 3D model from every recorded frame, then paints the recorded photos onto it. This takes about a minute; tap Continue in background and keep working.</item>
+        <item>The progress bar on the scan card covers reconstruction first and texturing last. A model that finishes in the background updates the card by itself.</item>
+        <item>3D view: one finger rotates, two fingers pan, pinch to zoom. The buttons switch model ↔ points and real colour ↔ colour by height, and reset the view.</item>
+        <item>Detected doors and windows are drawn as frames in the 3D view, so you can compare them with the scanned points.</item>
+        <item>Generate 3D model builds the model again from the recording: use it after an app update that improved reconstruction, or when the first build failed.</item>
+        <item>Without Depth API the app reconstructs depth from the images itself: only surfaces with pattern come out; measurements still work.</item>
+    </string-array>
+
+    <string name="guide_plan_title">Floor plan and elevations</string>
+    <string-array name="guide_plan_lines">
+        <item>The plan finds the floor and ceiling levels, cuts the scan through the walls, turns the main walls parallel to the axes and closes the corners. Wall lengths are in mm; the floor-to-ceiling height is shown above the plan.</item>
+        <item>Doors, windows and openings are found automatically with width, height, sill, head and distance from the wall corner, tagged D1, W1… Low-confidence items are marked to check on site.</item>
+        <item>Tap a symbol on the plan or an item in the Doors &amp; windows tab to change its type, sizes (mm), door swing (hinge left / right, double, opens in / out) or swap the room side. Hand-edited items are marked MANUAL in exports.</item>
+        <item>Tap + and then a wall to add a door or window the scan missed. Restore automatic detection undoes your edits.</item>
+        <item>Door swing is read from a door leaf left open in the scan; the leaf and its arc are drawn on the plan, in DXF and in the 3D view.</item>
+        <item>Elevations: one drawing per wall seen from inside, keyed A, B, C… clockwise from north; tap a key on the plan to open it. Grey is the scanned wall surface; orange is what sits on or in front of the wall (up to 300 mm), e.g. sockets, pipes, cabinets.</item>
+        <item>All files of one scan share one coordinate system (Z up, floor at 0, main walls along X / Y), so they overlay exactly in CAD.</item>
+    </string-array>
+
+    <string name="guide_measure_title">Measurements</string>
+    <string-array name="guide_measure_lines">
+        <item>While scanning, aim the crosshair at the first point and tap Measure, then aim at the end point and tap End point. The distance is shown live in mm.</item>
+        <item>Undo removes the last measurement. Measurements are anchored in the scan and listed on the scan card afterwards; tap one to name it, e.g. Door width.</item>
+        <item>A measurement taken within 20 cm of a wall also appears on that wall\'s elevation.</item>
+        <item>Measurements are drawn in the 3D view and exported in the plan DXF and the measurements CSV.</item>
+        <item>Door and window sizes on the plan can be typed in exactly from a tape measurement.</item>
+        <item>Accuracy is about 1–3 percent of the distance and drifts over long walks. Always check critical sizes with a tape or laser before fabrication.</item>
+    </string-array>
+
+    <string name="guide_export_title">Exports</string>
+    <string name="guide_export_text">Export from the scan card. The share sheet sends the file to LINE, Gmail, Drive or any other app. Drawing units are millimetres.</string>
+    <string-array name="guide_export_names">
+        <item>Plan DXF (AutoCAD)</item>
+        <item>Elevations DXF (AutoCAD)</item>
+        <item>3D model GLB / OBJ / PLY</item>
+        <item>Point cloud PLY / PTS</item>
+        <item>Walls 3D OBJ</item>
+        <item>Door/window schedule CSV</item>
+        <item>Measurements CSV</item>
+        <item>Recording ZIP</item>
+    </string-array>
+    <string-array name="guide_export_uses">
+        <item>Walls, dimensions, doors with swing arcs, windows, tags, the door / window schedule, measurements and elevation keys on separate layers. For AutoCAD, BricsCAD, ZWCAD or LibreCAD.</item>
+        <item>Every wall elevation side by side with openings, dimensions, measurements and scanned surface points, for shop drawings of wall-mounted work.</item>
+        <item>The colour 3D model. GLB carries the photo texture and opens in Windows 3D Viewer, Blender or SketchUp; OBJ and PLY carry colour per vertex for Blender, MeshLab or CloudCompare.</item>
+        <item>All scanned points. PTS opens in Autodesk ReCap for Revit / AutoCAD; PLY in CloudCompare, MeshLab or Blender.</item>
+        <item>The walls as floor-to-ceiling slabs with the door and window holes cut out, for SketchUp, Blender or Revit.</item>
+        <item>Tag, type, width, height, sill, head, distance from the corners, hinge, swing and source (SCAN / MANUAL), for Excel or Google Sheets.</item>
+        <item>Every measurement with its label, length and coordinates.</item>
+        <item>The recorded frames with camera poses (and depth) for the desktop tool, COLMAP, RealityCapture, Postshot or nerfstudio. The small version (up to 20 MB) is for sending with a problem report.</item>
+    </string-array>
+
+    <string name="guide_media_title">Photos &amp; videos</string>
+    <string-array name="guide_media_lines">
+        <item>On the project page tap Take photo or Record video to use the phone\'s camera app, or From gallery to import existing files.</item>
+        <item>They are kept in the project next to the scans and shown as thumbnails; tap one to open it full screen.</item>
+        <item>Long-press a thumbnail (or use its corner menu) to share or delete it.</item>
+        <item>Deleting the project deletes its photos and videos too.</item>
+    </string-array>
+
+    <string name="guide_trouble_title">Troubleshooting</string>
+    <string-array name="guide_trouble_problems">
+        <item>No Depth API on this phone</item>
+        <item>The model has holes</item>
+        <item>Walls appear doubled or shifted</item>
+        <item>The model is dark or the colours are off</item>
+        <item>Seams or patches in the texture</item>
+        <item>Recording stopped or the scan could not be saved</item>
+        <item>No walls found on the plan</item>
+        <item>A door or window was not found</item>
+        <item>AR does not start</item>
+        <item>The scan looks wrong and nothing helps</item>
+    </string-array>
+    <string-array name="guide_trouble_fixes">
+        <item>Only sparse points are captured and only patterned surfaces reconstruct. Step sideways while scanning; measurements still work. A phone listed as \"Supports Depth API\" gives dense scans.</item>
+        <item>Scan slower and closer (1–2 m) and pass each area twice from different positions. Holes on glass, mirrors or bare white walls are expected.</item>
+        <item>Walk slower and avoid fast turns: tracking lost its place. Make one scan per room rather than one long walk.</item>
+        <item>Add more light and scan again; colour comes from the camera image.</item>
+        <item>Tap Generate 3D model to rebuild with the latest version of the app.</item>
+        <item>Storage is full: free up space (a room needs 100–300 MB) and delete old scans or their recordings.</item>
+        <item>Scan the walls between knee and head height from 1–3 m away, all the way round the room.</item>
+        <item>Both jambs and the wall above must be in view; closed curtains hide windows. Tap + on the plan to add it by hand.</item>
+        <item>Close other camera apps, allow the camera permission and install or update Google Play Services for AR. Some phones do not support ARCore.</item>
+        <item>Export the small recording ZIP (up to 20 MB) and send it for support.</item>
+    </string-array>
+</resources>
