@@ -72,7 +72,7 @@
     <string name="media_take_photo">ถ่ายภาพ</string>
     <string name="media_record_video">อัดวิดีโอ</string>
     <string name="media_import">จากแกลเลอรี</string>
-    <string name="media_empty">ยังไม่มีภาพถ่ายหรือวิดีโอ ถ่ายหน้างานเก็บไว้คู่กับสแกนได้เลย</string>
+    <string name="media_empty">ยังไม่มีภาพถ่ายหรือวิดีโอ ใช้ปุ่มกล้อง วิดีโอ และแกลเลอรีด้านล่าง (ข้างปุ่มสแกน) เพื่อเก็บไว้คู่กับสแกน</string>
     <plurals name="media_count">
         <item quantity="other">%d ภาพ/วิดีโอ</item>
     </plurals>

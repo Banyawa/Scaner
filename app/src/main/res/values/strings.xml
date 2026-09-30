@@ -74,7 +74,7 @@
     <string name="media_take_photo">Take photo</string>
     <string name="media_record_video">Record video</string>
     <string name="media_import">From gallery</string>
-    <string name="media_empty">No photos or videos yet. Take some of the site to keep them next to the scans.</string>
+    <string name="media_empty">No photos or videos yet. Use the camera, video and gallery buttons at the bottom to keep some next to the scans.</string>
     <plurals name="media_count">
         <item quantity="one">%d photo/video</item>
         <item quantity="other">%d photos/videos</item>

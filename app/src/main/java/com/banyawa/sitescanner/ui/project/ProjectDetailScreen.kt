@@ -34,9 +34,12 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Straighten
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -364,17 +367,28 @@ fun ProjectDetailScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    if (ScanGuidePrefs.briefingWanted(context)) {
-                        briefing = true
-                    } else {
-                        startScan()
-                    }
-                },
-                icon = { Icon(Icons.Filled.DocumentScanner, contentDescription = null) },
-                text = { Text(stringResource(R.string.scan_new)) },
-            )
+            // Photo, video and import beside the scan button, smaller than it.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MediaFab(Icons.Filled.PhotoCamera, stringResource(R.string.media_take_photo)) { capture(MediaKind.PHOTO) }
+                MediaFab(Icons.Filled.Videocam, stringResource(R.string.media_record_video)) { capture(MediaKind.VIDEO) }
+                MediaFab(Icons.Filled.PhotoLibrary, stringResource(R.string.media_import)) {
+                    val request = PickVisualMediaRequest.Builder()
+                        .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                        .build()
+                    pickMedia.launch(request)
+                }
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        if (ScanGuidePrefs.briefingWanted(context)) {
+                            briefing = true
+                        } else {
+                            startScan()
+                        }
+                    },
+                    icon = { Icon(Icons.Filled.DocumentScanner, contentDescription = null) },
+                    text = { Text(stringResource(R.string.scan_new)) },
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
@@ -391,19 +405,7 @@ fun ProjectDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     item { ProjectHeader(p, arSupported) }
-                    item {
-                        MediaActions(
-                            count = p.media.size,
-                            onTakePhoto = { capture(MediaKind.PHOTO) },
-                            onRecordVideo = { capture(MediaKind.VIDEO) },
-                            onImport = {
-                                val request = PickVisualMediaRequest.Builder()
-                                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                                    .build()
-                                pickMedia.launch(request)
-                            },
-                        )
-                    }
+                    item { MediaHeader(count = p.media.size) }
                     items(p.media.asReversed().chunked(MEDIA_COLUMNS), key = { row -> row.first().id }) { row ->
                         MediaRow(
                             items = row,
