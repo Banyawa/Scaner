@@ -1,5 +1,8 @@
 package com.banyawa.sitescanner.ui.common
 
+import android.content.Context
+import android.content.res.Configuration
+import android.speech.tts.TextToSpeech
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,11 +17,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -38,9 +45,13 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.banyawa.sitescanner.R
+import com.banyawa.sitescanner.scan.ScanGuidePrefs
+import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -52,14 +63,20 @@ import kotlin.math.sin
  * The demonstration of how to walk a scan, drawn frame by frame (so it plays on every
  * phone, needs no codec and no file): a person with a phone in a room seen from above,
  * the surfaces the camera has covered turning green. Loops; a tap pauses and resumes; the
- * caption of the scene playing shows under it. docs/scan_howto_render.py draws the same
- * scenes to an MP4 for sharing outside the app.
+ * caption of the scene playing shows under it and, unless muted, the phone's text-to-speech
+ * reads it out (in the app's language when it has that voice, else in English).
+ * docs/scan_howto_render.py draws the same scenes to an MP4 for sharing outside the app.
  */
 @Composable
 fun HowToVideo(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
     val captions = stringArrayResource(R.array.scan_video_captions)
     var time by remember { mutableFloatStateOf(0f) }
     var paused by remember { mutableStateOf(false) }
+    var narrating by remember { mutableStateOf(ScanGuidePrefs.narrationWanted(context)) }
+    var voice by remember { mutableStateOf(Narrator.Voice.STARTING) }
+    val narrator = remember { Narrator(context, captions) { voice = it } }
+    DisposableEffect(narrator) { onDispose { narrator.release() } }
     LaunchedEffect(paused) {
         if (paused) return@LaunchedEffect
         var last = withFrameNanos { it }
@@ -95,23 +112,110 @@ fun HowToVideo(modifier: Modifier = Modifier) {
                     modifier = Modifier.align(Alignment.Center).size(56.dp).background(Color.Black.copy(alpha = 0.5f), CircleShape).padding(8.dp),
                 )
             }
+            IconButton(
+                onClick = {
+                    narrating = !narrating
+                    ScanGuidePrefs.setNarrationWanted(context, narrating)
+                },
+                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(36.dp),
+            ) {
+                Icon(
+                    if (narrating) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                    contentDescription = stringResource(if (narrating) R.string.howto_narration_off else R.string.howto_narration_on),
+                    tint = Color.White,
+                    modifier = Modifier.background(Color.Black.copy(alpha = 0.45f), CircleShape).padding(6.dp),
+                )
+            }
         }
         val scene = HowToScenes.sceneAt(time).coerceIn(0, captions.size - 1)
+        // Read each scene's caption as it starts; silence while paused or muted.
+        LaunchedEffect(scene, paused, narrating, voice) {
+            if (!paused && narrating && voice == Narrator.Voice.READY) narrator.speak(scene) else narrator.stop()
+        }
         Text(
             captions.getOrElse(scene) { "" },
             modifier = Modifier.padding(top = 6.dp),
             style = MaterialTheme.typography.bodyMedium,
             minLines = 2,
         )
+        if (narrating && voice == Narrator.Voice.NONE) {
+            Text(
+                stringResource(R.string.howto_no_voice),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * Reads the captions with the phone's text-to-speech engine: in the app's language when
+ * the engine has that voice, else in English (the captions' English text), else not at all.
+ */
+private class Narrator(private val context: Context, private val captions: Array<String>, private val onVoice: (Voice) -> Unit) {
+    enum class Voice { STARTING, READY, NONE }
+
+    private var engine: TextToSpeech? = null
+    private var english = false
+    private var released = false
+
+    init {
+        engine = TextToSpeech(context) { status ->
+            if (released) return@TextToSpeech
+            val tts = engine
+            if (status != TextToSpeech.SUCCESS || tts == null) {
+                onVoice(Voice.NONE)
+                return@TextToSpeech
+            }
+            val wanted = Locale.getDefault()
+            val chosen = listOf(wanted, Locale.ENGLISH).firstOrNull { available(tts, it) }
+            if (chosen == null) {
+                onVoice(Voice.NONE)
+            } else {
+                runCatching { tts.setLanguage(chosen) }
+                english = chosen.language == Locale.ENGLISH.language && wanted.language != Locale.ENGLISH.language
+                onVoice(Voice.READY)
+            }
+        }
+    }
+
+    private fun available(tts: TextToSpeech, locale: Locale): Boolean =
+        runCatching { tts.isLanguageAvailable(locale) >= TextToSpeech.LANG_AVAILABLE }.getOrDefault(false)
+
+    /** The English captions, for a phone that speaks English but not the app's language. */
+    private val englishCaptions: Array<String> by lazy {
+        val configuration = Configuration(context.resources.configuration)
+        configuration.setLocale(Locale.ENGLISH)
+        context.createConfigurationContext(configuration).resources.getStringArray(R.array.scan_video_captions)
+    }
+
+    fun speak(scene: Int) {
+        val tts = engine ?: return
+        val lines = if (english) englishCaptions else captions
+        val text = lines.getOrNull(scene) ?: return
+        runCatching { tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "howto$scene") }
+    }
+
+    fun stop() {
+        runCatching { engine?.stop() }
+    }
+
+    fun release() {
+        released = true
+        runCatching {
+            engine?.stop()
+            engine?.shutdown()
+        }
+        engine = null
     }
 }
 
 /** The scenes, in a 960 × 540 design space scaled to the canvas; times in seconds. */
 internal object HowToScenes {
-    const val TOTAL_SEC = 36f
+    const val TOTAL_SEC = 39f
 
     /** Where each scene (and its caption) starts: posture, walk, spin, corners, door, glass, save. */
-    private val STARTS = floatArrayOf(0f, 5f, 12f, 15f, 21f, 26f, 31f)
+    private val STARTS = floatArrayOf(0f, 6f, 13f, 17.5f, 23.5f, 28.5f, 34f)
 
     val BG = Color(0xFF1E2530)
     val GREEN = Color(0xFF4CFF7A)
@@ -280,7 +384,7 @@ internal object HowToScenes {
         drawLine(PERSON, Offset(x0, 200f), Offset(x0, 380f), strokeWidth = 22f, cap = StrokeCap.Round)
         drawLine(PERSON, Offset(x0, 380f), Offset(x0 - 50f, 470f), strokeWidth = 18f, cap = StrokeCap.Round)
         drawLine(PERSON, Offset(x0, 380f), Offset(x0 + 50f, 470f), strokeWidth = 18f, cap = StrokeCap.Round)
-        if (t <= 3.2f) {
+        if (t <= 3.8f) {
             drawLine(PERSON, Offset(x0, 240f), Offset(x0 + 110f, 260f), strokeWidth = 18f, cap = StrokeCap.Round)
             drawRect(PHONE, Offset(x0 + 110f, 220f), Size(22f, 80f))
             val cone = Path().apply { moveTo(x0 + 132f, 260f); lineTo(900f, 130f); lineTo(900f, 390f); close() }
@@ -389,7 +493,7 @@ internal object HowToScenes {
         val tl = ROOM.p(5.94f, 0.6f)
         drawRect(GLASS, tl, Size(0.18f * PX, 1.6f * PX))
         drawPerson(ROOM, Pose(4.4f, 1.4f, 0f, reach = 1.8f))
-        if (t < 2.5f) {
+        if (t < 3f) {
             val m = ROOM.p(6f, 1.4f)
             mark(false, m.x + 60f, m.y)
         } else {

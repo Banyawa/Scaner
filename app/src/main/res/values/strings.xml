@@ -252,4 +252,7 @@
         <item>Avoid aiming at glass and mirrors for long; good light helps a lot.</item>
         <item>Press ✓ to save, then wait for the 3D model.</item>
     </string-array>
+    <string name="howto_narration_on">Read the captions aloud</string>
+    <string name="howto_narration_off">Mute the narration</string>
+    <string name="howto_no_voice">No text-to-speech voice on this phone: install one under Settings › General management › Text-to-speech.</string>
 </resources>

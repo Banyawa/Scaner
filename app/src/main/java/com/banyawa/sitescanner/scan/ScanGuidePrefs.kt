@@ -11,6 +11,7 @@ object ScanGuidePrefs {
     private const val FILE = "guide"
     private const val BRIEFING_OFF = "scan_briefing_off"
     private const val RECORDINGS = "coach_scans"
+    private const val NARRATION_OFF = "howto_narration_off"
 
     /** Recordings after which the coach no longer opens by itself. */
     const val COACHED_RECORDINGS = 3
@@ -25,6 +26,13 @@ object ScanGuidePrefs {
 
     /** Whether the coach should be open when the scan screen starts. */
     fun coachByDefault(context: Context): Boolean = prefs(context).getInt(RECORDINGS, 0) < COACHED_RECORDINGS
+
+    /** Whether the how-to demonstration reads its captions aloud. */
+    fun narrationWanted(context: Context): Boolean = !prefs(context).getBoolean(NARRATION_OFF, false)
+
+    fun setNarrationWanted(context: Context, wanted: Boolean) {
+        prefs(context).edit().putBoolean(NARRATION_OFF, !wanted).apply()
+    }
 
     fun noteRecording(context: Context) {
         val p = prefs(context)

@@ -87,7 +87,7 @@ def side_view(img, t):
     """Scene 1: holding the phone upright at chest height (then, briefly, how not to)."""
     d = ImageDraw.Draw(img)
     d.line([(0, 470), (W, 470)], fill=WALL, width=6)
-    wrong = t > 3.2
+    wrong = t > 3.8
     x0 = 330
     d.ellipse([x0 - 40, 120, x0 + 40, 200], fill=PERSON)              # head
     d.line([(x0, 200), (x0, 380)], fill=PERSON, width=22)             # body
@@ -180,7 +180,7 @@ def scene_glass(img, s, t):
     px, py, ang = 4.4, 1.4, 0.0
     draw_person(img, s, px, py, ang, reach=1.8)
     d = ImageDraw.Draw(img)
-    if t < 2.5:
+    if t < 3.0:
         mark(d, False, s.P(6.0, 1.4)[0] + 60, s.P(6.0, 1.4)[1])
     else:
         # a lamp: light on
@@ -212,7 +212,7 @@ def scene_save(img, t):
         if u >= 1: mark(d, True, 860, 80)
 
 SCENES = [  # (seconds, function)
-    (5.0, 'side'), (7.0, 'walk'), (3.0, 'spin'), (6.0, 'corners'), (5.0, 'door'), (5.0, 'glass'), (5.0, 'save'),
+    (6.0, 'side'), (7.0, 'walk'), (4.5, 'spin'), (6.0, 'corners'), (5.0, 'door'), (5.5, 'glass'), (5.0, 'save'),
 ]
 
 def main(out):

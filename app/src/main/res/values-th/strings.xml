@@ -249,4 +249,7 @@
         <item>เลี่ยงเล็งกระจกและกระจกเงานาน ๆ แสงสว่างช่วยได้มาก</item>
         <item>กด ✓ บันทึก แล้วรอสร้างโมเดล 3D</item>
     </string-array>
+    <string name="howto_narration_on">เปิดเสียงบรรยาย</string>
+    <string name="howto_narration_off">ปิดเสียงบรรยาย</string>
+    <string name="howto_no_voice">เครื่องนี้ไม่มีเสียงพูด: ติดตั้งเสียงภาษาไทยได้ที่ การตั้งค่า › การจัดการทั่วไป › การอ่านออกเสียงข้อความ</string>
 </resources>
