@@ -6,6 +6,7 @@ import com.banyawa.sitescanner.core.export.MeshPly
 import com.banyawa.sitescanner.core.export.Ply
 import com.banyawa.sitescanner.core.floorplan.Elevation
 import com.banyawa.sitescanner.core.floorplan.ElevationBuilder
+import com.banyawa.sitescanner.core.floorplan.FloorPlan
 import com.banyawa.sitescanner.core.floorplan.FloorPlanExtractor
 import com.banyawa.sitescanner.core.floorplan.FloorPlanResult
 import com.banyawa.sitescanner.core.mesh.TexturedMesh
@@ -14,6 +15,8 @@ import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.pointcloud.RgbImage
 import com.banyawa.sitescanner.core.project.ProjectRepository
 import com.banyawa.sitescanner.core.project.ScanInfo
+import com.banyawa.sitescanner.core.scene.SceneClassifier
+import com.banyawa.sitescanner.core.scene.SceneLayers
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -42,6 +45,9 @@ class ScanAnalysis(val repository: ProjectRepository) {
     private var cachedElevations: List<Elevation>? = null
     private var cachedMeshKey: String? = null
     private var cachedMesh: LoadedMesh? = null
+    private var cachedSceneKey: String? = null
+    private var cachedScenePlan: FloorPlan? = null
+    private var cachedScene: SceneLayers? = null
 
     suspend fun cloud(projectId: String, scan: ScanInfo): PointCloud = mutex.withLock {
         val key = key(projectId, scan)
@@ -62,13 +68,14 @@ class ScanAnalysis(val repository: ProjectRepository) {
         if (!scan.hasMesh) return null
         val file = repository.meshFile(projectId, scan) ?: return null
         val atlasFile = repository.atlasFile(projectId, scan)
-        // A rebuild rewrites both files; either changing means the cached model is stale.
-        val key = "$projectId/${scan.id}/${file.lastModified()}/${atlasFile?.lastModified()}"
+        val key = meshKey(projectId, scan, file, atlasFile)
         return mutex.withLock {
             if (key != cachedMeshKey) {
                 // Drop the old model first: two textured models may not fit in memory together.
                 cachedMesh = null
                 cachedMeshKey = null
+                cachedScene = null
+                cachedSceneKey = null
                 cachedMesh = withContext(Dispatchers.IO) {
                     if (file.isFile) {
                         val data = MeshPly.readTextured(file)
@@ -82,6 +89,32 @@ class ScanAnalysis(val repository: ProjectRepository) {
             }
             cachedMesh
         }
+    }
+
+    /** A rebuild rewrites both files; either changing means a cached model is stale. */
+    private fun meshKey(projectId: String, scan: ScanInfo, file: File, atlasFile: File?): String =
+        "$projectId/${scan.id}/${file.lastModified()}/${atlasFile?.lastModified()}"
+
+    /**
+     * The surface model sorted into floor, ceiling, walls and objects against the floor plan
+     * (with the user's door / window edits), or null when the scan has no model. Worked out
+     * again when the model's files, the point cloud or the plan change, like the other caches.
+     */
+    suspend fun sceneLayers(projectId: String, scan: ScanInfo): SceneLayers? {
+        val loaded = mesh(projectId, scan) ?: return null
+        val file = repository.meshFile(projectId, scan) ?: return null
+        val plan = floorPlan(projectId, scan).plan
+        val key = "${meshKey(projectId, scan, file, repository.atlasFile(projectId, scan))}/${key(projectId, scan)}"
+        mutex.withLock {
+            if (cachedSceneKey == key && cachedScenePlan == plan) cachedScene?.let { return it }
+        }
+        val layers = withContext(Dispatchers.Default) { SceneClassifier.classify(loaded.mesh, plan) }
+        mutex.withLock {
+            cachedSceneKey = key
+            cachedScenePlan = plan
+            cachedScene = layers
+        }
+        return layers
     }
 
     /**

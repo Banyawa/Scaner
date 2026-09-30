@@ -15,6 +15,7 @@ import com.banyawa.sitescanner.core.export.MeasurementCsv
 import com.banyawa.sitescanner.core.export.MeshFrames
 import com.banyawa.sitescanner.core.export.MeshObj
 import com.banyawa.sitescanner.core.export.MeshPly
+import com.banyawa.sitescanner.core.export.ObjectCsv
 import com.banyawa.sitescanner.core.export.OpeningCsv
 import com.banyawa.sitescanner.core.export.Ply
 import com.banyawa.sitescanner.core.export.Pts
@@ -22,6 +23,7 @@ import com.banyawa.sitescanner.core.export.WallsObj
 import com.banyawa.sitescanner.core.floorplan.OpeningTags
 import com.banyawa.sitescanner.core.project.Project
 import com.banyawa.sitescanner.core.project.ScanInfo
+import com.banyawa.sitescanner.core.scene.SceneLayers
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -44,6 +46,7 @@ enum class ExportFormat(
     OBJ_WALLS("obj", "text/plain", R.string.export_obj),
     CSV_MEASUREMENTS("csv", "text/csv", R.string.export_csv),
     CSV_OPENINGS("csv", "text/csv", R.string.export_openings_csv),
+    CSV_OBJECTS("csv", "text/csv", R.string.export_objects_csv, needsMesh = true),
     CAPTURE_ZIP("zip", "application/zip", R.string.export_capture_zip, needsCapture = true),
     CAPTURE_ZIP_SMALL("zip", "application/zip", R.string.export_capture_zip_small, needsCapture = true),
 }
@@ -67,7 +70,14 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
             ExportFormat.DXF_PLAN, ExportFormat.DXF_ELEVATIONS -> analysis.elevations(project.id, scan)
             else -> emptyList()
         }
-        val title = "${project.name} - ${scan.name}" + (project.pin?.let { " (${it.coordinates})" } ?: "")
+        // Objects and the ceiling map come from the surface model; the plan drawing does without when there is none.
+        val scene: SceneLayers? = when (format) {
+            ExportFormat.DXF_PLAN -> runCatching { analysis.sceneLayers(project.id, scan) }.getOrNull()
+            ExportFormat.CSV_OBJECTS -> analysis.sceneLayers(project.id, scan)
+                ?: throw IllegalStateException(context.getString(R.string.export_no_model))
+            else -> null
+        }
+        val title ="${project.name} - ${scan.name}" + (project.pin?.let { " (${it.coordinates})" } ?: "")
         return withContext(Dispatchers.IO) {
             val dir = File(context.cacheDir, "exports").apply { mkdirs() }
             dir.listFiles()?.forEach { it.delete() }
@@ -77,6 +87,7 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
                 ExportFormat.OBJ_WALLS -> "walls"
                 ExportFormat.CSV_MEASUREMENTS -> "measurements"
                 ExportFormat.CSV_OPENINGS -> "doors_windows"
+                ExportFormat.CSV_OBJECTS -> "objects"
                 ExportFormat.GLB_MODEL, ExportFormat.OBJ_MODEL, ExportFormat.PLY_MODEL -> "model"
                 else -> "points"
             }
@@ -89,6 +100,8 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
                         scan.measurements,
                         FloorPlanDxf.Options(title = title),
                         elevations,
+                        objects = scene?.objects.orEmpty(),
+                        ceiling = scene?.ceiling,
                     ).write(out)
                 }
                 ExportFormat.DXF_ELEVATIONS -> file.bufferedWriter().use { out ->
@@ -103,6 +116,7 @@ class ExportManager(private val context: Context, private val analysis: ScanAnal
                 ExportFormat.CSV_OPENINGS -> file.bufferedWriter().use {
                     OpeningCsv.write(result.plan.openings, it, scan.name)
                 }
+                ExportFormat.CSV_OBJECTS -> file.writeText(ObjectCsv.toString(scene?.objects.orEmpty()))
                 ExportFormat.GLB_MODEL -> {
                     val model = mesh(project, scan)
                     val textured = model.textured

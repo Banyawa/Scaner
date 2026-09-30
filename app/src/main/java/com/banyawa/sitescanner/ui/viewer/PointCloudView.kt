@@ -6,8 +6,11 @@ import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import com.banyawa.sitescanner.core.geometry.Mat4
+import com.banyawa.sitescanner.core.geometry.Vec3
 import com.banyawa.sitescanner.core.pointcloud.PointCloud
 import com.banyawa.sitescanner.core.project.Measurement
+import com.banyawa.sitescanner.core.scene.SceneLayer
 import com.banyawa.sitescanner.core.viewer.OrbitCamera
 import com.banyawa.sitescanner.data.LoadedMesh
 import com.banyawa.sitescanner.gl.LineRenderer
@@ -55,14 +58,23 @@ class PointCloudView(context: Context) : GLSurfaceView(context) {
     private var shownMeasurements: List<Measurement>? = null
     private var shownOpenings: OpeningFrames? = null
     private var shownMesh: LoadedMesh? = null
+    private var shownScene: SceneOverlay? = null
 
     /**
      * Shows [mesh] (the surface model, photo-textured when it has a texture) instead of
-     * the points when it is not null.
+     * the points when it is not null; [scene] sorts its triangles into layers and adds the
+     * object boxes.
      */
-    fun setContent(cloud: PointCloud, colors: ByteArray, measurements: List<Measurement>, openings: OpeningFrames, mesh: LoadedMesh?) {
+    fun setContent(
+        cloud: PointCloud,
+        colors: ByteArray,
+        measurements: List<Measurement>,
+        openings: OpeningFrames,
+        mesh: LoadedMesh?,
+        scene: SceneOverlay,
+    ) {
         if (cloud === shownCloud && colors === shownColors && measurements == shownMeasurements &&
-            openings === shownOpenings && mesh === shownMesh
+            openings === shownOpenings && mesh === shownMesh && scene === shownScene
         ) return
         val refit = cloud !== shownCloud
         shownCloud = cloud
@@ -70,8 +82,29 @@ class PointCloudView(context: Context) : GLSurfaceView(context) {
         shownMeasurements = measurements
         shownOpenings = openings
         shownMesh = mesh
-        queueEvent { renderer.setContent(cloud, colors, measurements, openings, mesh, refit) }
+        shownScene = scene
+        queueEvent { renderer.setContent(cloud, colors, measurements, openings, mesh, scene, refit) }
         requestRender()
+    }
+
+    /** Which layers of the model to draw: [MeshRenderer.layerBit] per layer, all by default. */
+    fun setVisibleLayers(mask: Int) {
+        queueEvent { renderer.setVisibleLayers(mask) }
+        requestRender()
+    }
+
+    /** Draws the object boxes when [show], the one with id [highlighted] brighter. */
+    fun setObjectBoxes(show: Boolean, highlighted: Int?) {
+        queueEvent { renderer.setObjectBoxes(show, highlighted) }
+        requestRender()
+    }
+
+    /**
+     * [listener] is called on the GL thread after every frame with where the drawn object
+     * boxes' labels go (none while the boxes are hidden), for labels drawn over the view.
+     */
+    fun setObjectLabelListener(listener: ((List<ObjectLabel>) -> Unit)?) {
+        renderer.onObjectLabels = listener
     }
 
     fun resetView() {
@@ -140,6 +173,22 @@ class OpeningFrames(val doors: FloatArray, val windows: FloatArray) {
     }
 }
 
+/**
+ * What the scene classifier found, ready to draw: a [SceneLayer] ordinal per triangle of
+ * the model ([layers], null while unknown) and each object's box.
+ */
+class SceneOverlay(val layers: ByteArray?, val boxes: List<ObjectBox>) {
+    companion object {
+        val EMPTY = SceneOverlay(null, emptyList())
+    }
+}
+
+/** An object's box: its 12 edges as GL_LINES vertex pairs in ARCore world coordinates, and where its label sits. */
+class ObjectBox(val id: Int, val lines: FloatArray, val labelAt: Vec3)
+
+/** Where an object's label is on the view, in pixels from the top left. */
+data class ObjectLabel(val id: Int, val x: Float, val y: Float)
+
 private class ViewerRenderer : GLSurfaceView.Renderer {
     val camera = OrbitCamera()
     private val points = PointRenderer()
@@ -150,11 +199,19 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
     private var colors: ByteArray? = null
     private var mesh: LoadedMesh? = null
     private var meshUploaded: LoadedMesh? = null
+    private var scene = SceneOverlay.EMPTY
+    private var layersUploaded: ByteArray? = null
+    private var showBoxes = true
+    private var highlighted: Int? = null
     private var measurementLines = FloatArray(0)
     private var openings = OpeningFrames.EMPTY
     private var uploaded = false
     private var width = 1
     private var height = 1
+
+    /** Called on the GL thread after each frame with the labels of the boxes drawn. */
+    @Volatile
+    var onObjectLabels: ((List<ObjectLabel>) -> Unit)? = null
 
     fun setContent(
         cloud: PointCloud,
@@ -162,13 +219,15 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
         measurements: List<Measurement>,
         openings: OpeningFrames,
         mesh: LoadedMesh?,
+        scene: SceneOverlay,
         refit: Boolean,
     ) {
         this.cloud = cloud
         this.colors = colors
         this.openings = openings
         this.mesh = mesh
-        measurementLines = FloatArray(measurements.size * 6).also { arr ->
+        this.scene = scene
+        measurementLines =FloatArray(measurements.size * 6).also { arr ->
             measurements.forEachIndexed { i, m ->
                 arr[i * 6] = m.start.x; arr[i * 6 + 1] = m.start.y; arr[i * 6 + 2] = m.start.z
                 arr[i * 6 + 3] = m.end.x; arr[i * 6 + 4] = m.end.y; arr[i * 6 + 5] = m.end.z
@@ -182,6 +241,15 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
         cloud?.bounds()?.let { camera.fit(it) }
     }
 
+    fun setVisibleLayers(mask: Int) {
+        surface.visibleLayers = mask
+    }
+
+    fun setObjectBoxes(show: Boolean, highlighted: Int?) {
+        showBoxes = show
+        this.highlighted = highlighted
+    }
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         GLES20.glClearColor(0.11f, 0.12f, 0.14f, 1f)
         GLES20.glEnable(GLES20.GL_DEPTH_TEST)
@@ -190,6 +258,7 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
         surface.createOnGlThread()
         uploaded = false
         meshUploaded = null
+        layersUploaded = null
     }
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -208,10 +277,16 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
         val viewProj = camera.viewProjection(width.toFloat() / height.coerceAtLeast(1))
         val m = mesh
         if (m != null) {
-            if (meshUploaded !== m) {
+            // The layers arrive after the model (they wait for the floor plan): upload again then.
+            if (meshUploaded !== m || layersUploaded !== scene.layers) {
                 val textured = m.textured
-                if (textured != null) surface.upload(textured.mesh, textured.uv, textured.atlas) else surface.upload(m.mesh)
+                if (textured != null) {
+                    surface.upload(textured.mesh, textured.uv, textured.atlas, scene.layers)
+                } else {
+                    surface.upload(m.mesh, layers = scene.layers)
+                }
                 meshUploaded = m
+                layersUploaded = scene.layers
             }
             // Headlight: lit from where the viewer stands.
             val toEye = (camera.eye() - camera.target).normalized()
@@ -225,6 +300,30 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
             lines.draw(viewProj, measurementLines, MEASURE_COLOR, GLES20.GL_LINES, lineWidth = 5f)
             lines.draw(viewProj, measurementLines, ENDPOINT_COLOR, GLES20.GL_POINTS, pointSize = 12f)
         }
+        // Object boxes go with the objects layer; the chosen one is brighter.
+        val boxesShown = showBoxes && (surface.visibleLayers and MeshRenderer.layerBit(SceneLayer.OBJECT)) != 0
+        if (boxesShown) {
+            for (box in scene.boxes) {
+                val chosen = box.id == highlighted
+                lines.draw(
+                    viewProj,
+                    box.lines,
+                    if (chosen) BOX_HIGHLIGHT_COLOR else BOX_COLOR,
+                    GLES20.GL_LINES,
+                    lineWidth = if (chosen) 6f else 3f,
+                )
+            }
+        }
+        onObjectLabels?.let { listener ->
+            val labels = if (boxesShown) {
+                scene.boxes.mapNotNull { box ->
+                    Mat4.projectToScreen(viewProj, box.labelAt, width, height)?.let { ObjectLabel(box.id, it.x, it.y) }
+                }
+            } else {
+                emptyList()
+            }
+            listener(labels)
+        }
     }
 
     companion object {
@@ -233,5 +332,7 @@ private class ViewerRenderer : GLSurfaceView.Renderer {
         private val ENDPOINT_COLOR = floatArrayOf(1f, 1f, 1f, 1f)
         private val DOOR_COLOR = floatArrayOf(0.2f, 0.9f, 0.75f, 1f)
         private val WINDOW_COLOR = floatArrayOf(0.35f, 0.6f, 1f, 1f)
+        private val BOX_COLOR = floatArrayOf(1f, 0.5f, 0f, 1f)
+        private val BOX_HIGHLIGHT_COLOR = floatArrayOf(1f, 0.85f, 0.3f, 1f)
     }
 }

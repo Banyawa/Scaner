@@ -3,6 +3,7 @@ package com.banyawa.sitescanner.gl
 import android.opengl.GLES20
 import com.banyawa.sitescanner.core.mesh.TriangleMesh
 import com.banyawa.sitescanner.core.pointcloud.RgbImage
+import com.banyawa.sitescanner.core.scene.SceneLayer
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -10,10 +11,12 @@ import java.nio.ByteOrder
  * Draws a triangle mesh with soft light from the viewer, so its shape reads while the
  * scanned colours stay close to what the camera saw: its photo texture when it has one,
  * else its vertex colours. OpenGL ES 2 only indexes 16-bit, so the mesh is split into
- * chunks of at most 65 535 vertices.
+ * chunks of at most 65 535 vertices. Given a [SceneLayer] per triangle, whole layers
+ * (the ceiling, say) can be left out of the drawing with [visibleLayers].
  */
 class MeshRenderer {
-    private class Chunk(val vbo: Int, val ibo: Int, val indexCount: Int)
+    /** [layerStart]: where each layer's run of indices starts, with the chunk's total at the end. */
+    private class Chunk(val vbo: Int, val ibo: Int, val indexCount: Int, val layerStart: IntArray)
 
     /** A linked program and where its inputs are; [surface] is a_Color or a_Uv. */
     private class Shading(vertex: String, fragment: String, surfaceAttr: String) {
@@ -34,6 +37,12 @@ class MeshRenderer {
     private var texture = 0
     private var stride = STRIDE
 
+    /** Whether the uploaded mesh came with a layer per triangle; without, [visibleLayers] is ignored. */
+    private var layered = false
+
+    /** Bit [SceneLayer.ordinal] set for each layer drawn ([layerBit]); all of them by default. */
+    var visibleLayers = ALL_LAYERS
+
     val isEmpty: Boolean get() = chunks.isEmpty()
 
     fun createOnGlThread() {
@@ -47,9 +56,11 @@ class MeshRenderer {
 
     /**
      * [uv] (two per vertex, origin top left) and [atlas] give the mesh its photo texture;
-     * without either it is drawn in its vertex colours.
+     * without either it is drawn in its vertex colours. [layers], a [SceneLayer] ordinal per
+     * triangle, lets [visibleLayers] leave layers out: the triangles go up in layer order,
+     * so each layer is one run of indices in every chunk.
      */
-    fun upload(mesh: TriangleMesh, uv: FloatArray? = null, atlas: RgbImage? = null) {
+    fun upload(mesh: TriangleMesh, uv: FloatArray? = null, atlas: RgbImage? = null, layers: ByteArray? = null) {
         release()
         if (mesh.isEmpty()) return
         val texCoords = uv?.takeIf { atlas != null && it.size >= mesh.vertexCount * 2 }
@@ -61,6 +72,11 @@ class MeshRenderer {
         var usedCount = 0
         val chunkIndices = ShortArray(minOf(mesh.indices.size, MAX_CHUNK_VERTICES * 6))
         var indexCount = 0
+        val triangleLayers = layers?.takeIf { it.size >= mesh.triangleCount }
+        layered = triangleLayers != null
+        val order = triangleOrder(mesh.triangleCount, triangleLayers)
+        // Indices of each layer in the chunk being filled.
+        val layerCounts = IntArray(LAYER_COUNT)
 
         fun flush() {
             if (indexCount == 0) return
@@ -84,13 +100,18 @@ class MeshRenderer {
             GLES20.glBufferData(GLES20.GL_ELEMENT_ARRAY_BUFFER, indexCount * 2, indices, GLES20.GL_STATIC_DRAW)
             GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0)
             GLES20.glBindBuffer(GLES20.GL_ELEMENT_ARRAY_BUFFER, 0)
-            chunks += Chunk(ids[0], ids[1], indexCount)
+            val layerStart = IntArray(LAYER_COUNT + 1)
+            for (l in 0 until LAYER_COUNT) layerStart[l + 1] = layerStart[l] + layerCounts[l]
+            chunks += Chunk(ids[0], ids[1], indexCount, layerStart)
+            layerCounts.fill(0)
             usedCount = 0
             indexCount = 0
         }
 
-        for (t in 0 until mesh.triangleCount) {
+        for (k in 0 until mesh.triangleCount) {
             if (usedCount + 3 > MAX_CHUNK_VERTICES || indexCount + 3 > chunkIndices.size) flush()
+            val t = order[k]
+            layerCounts[if (triangleLayers != null) layerIndex(triangleLayers[t]) else 0] += 3
             for (j in 0 until 3) {
                 val v = mesh.indices[t * 3 + j]
                 if (local[v] < 0) {
@@ -105,6 +126,22 @@ class MeshRenderer {
         if (texCoords != null && atlas != null) texture = uploadTexture(atlas)
         ShaderUtil.checkError("MeshRenderer.upload")
     }
+
+    /** The triangles in layer order (a counting sort), or as they are without [layers]. */
+    private fun triangleOrder(triangleCount: Int, layers: ByteArray?): IntArray {
+        val order = IntArray(triangleCount)
+        if (layers == null) {
+            for (t in 0 until triangleCount) order[t] = t
+            return order
+        }
+        val next = IntArray(LAYER_COUNT + 1)
+        for (t in 0 until triangleCount) next[layerIndex(layers[t]) + 1]++
+        for (l in 0 until LAYER_COUNT) next[l + 1] += next[l]
+        for (t in 0 until triangleCount) order[next[layerIndex(layers[t])]++] = t
+        return order
+    }
+
+    private fun layerIndex(layer: Byte): Int = layer.toInt().coerceIn(0, LAYER_COUNT - 1)
 
     /**
      * [atlas] as an RGBA texture, sent in strips of rows so a 4096² atlas never needs a
@@ -183,7 +220,16 @@ class MeshRenderer {
             } else {
                 GLES20.glVertexAttribPointer(s.surface, 4, GLES20.GL_UNSIGNED_BYTE, true, stride, 16)
             }
-            GLES20.glDrawElements(GLES20.GL_TRIANGLES, c.indexCount, GLES20.GL_UNSIGNED_SHORT, 0)
+            if (!layered || (visibleLayers and ALL_LAYERS) == ALL_LAYERS) {
+                GLES20.glDrawElements(GLES20.GL_TRIANGLES, c.indexCount, GLES20.GL_UNSIGNED_SHORT, 0)
+            } else {
+                for (l in 0 until LAYER_COUNT) {
+                    val count = c.layerStart[l + 1] - c.layerStart[l]
+                    if (count == 0 || (visibleLayers and (1 shl l)) == 0) continue
+                    // The offset is in bytes into the chunk's 16-bit indices.
+                    GLES20.glDrawElements(GLES20.GL_TRIANGLES, count, GLES20.GL_UNSIGNED_SHORT, c.layerStart[l] * 2)
+                }
+            }
         }
         GLES20.glDisableVertexAttribArray(s.position)
         GLES20.glDisableVertexAttribArray(s.normal)
@@ -205,18 +251,24 @@ class MeshRenderer {
 
     private fun isPowerOfTwo(n: Int): Boolean = n > 0 && (n and (n - 1)) == 0
 
-    private companion object {
-        const val STRIDE = 20
-        const val TEXTURED_STRIDE = 28
-        const val MAX_CHUNK_VERTICES = 65_535
+    companion object {
+        /** The bit of [layer] in [visibleLayers]. */
+        fun layerBit(layer: SceneLayer): Int = 1 shl layer.ordinal
+
+        val LAYER_COUNT: Int = SceneLayer.entries.size
+        val ALL_LAYERS: Int = (1 shl LAYER_COUNT) - 1
+
+        private const val STRIDE = 20
+        private const val TEXTURED_STRIDE = 28
+        private const val MAX_CHUNK_VERTICES = 65_535
 
         /** Texture upload buffer: 4 MB, 256 rows of a 4096-wide atlas. */
-        const val STRIP_BYTES = 4 * 1024 * 1024
+        private const val STRIP_BYTES = 4 * 1024 * 1024
 
         /** Every ES 2 GPU takes textures this big, whatever it reports. */
-        const val MIN_TEXTURE_SIZE = 64
+        private const val MIN_TEXTURE_SIZE = 64
 
-        const val VERTEX = """
+        private const val VERTEX = """
             uniform mat4 u_MVP;
             uniform vec3 u_Light;
             attribute vec3 a_Position;
@@ -231,7 +283,7 @@ class MeshRenderer {
             }
         """
 
-        const val FRAGMENT = """
+        private const val FRAGMENT = """
             precision mediump float;
             varying vec4 v_Color;
             void main() {
@@ -239,7 +291,7 @@ class MeshRenderer {
             }
         """
 
-        const val TEXTURED_VERTEX = """
+        private const val TEXTURED_VERTEX = """
             uniform mat4 u_MVP;
             uniform vec3 u_Light;
             attribute vec3 a_Position;
@@ -257,7 +309,7 @@ class MeshRenderer {
         """
 
         // Medium precision cannot address single texels of a 4096² atlas; use high where there is one.
-        const val TEXTURED_FRAGMENT = """
+        private const val TEXTURED_FRAGMENT = """
             #ifdef GL_FRAGMENT_PRECISION_HIGH
             precision highp float;
             #else

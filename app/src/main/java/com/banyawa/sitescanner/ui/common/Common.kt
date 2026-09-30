@@ -28,6 +28,12 @@ fun formatCount(n: Int): String = NumberFormat.getIntegerInstance().format(n)
 
 fun formatDuration(sec: Int): String = String.format(Locale.US, "%d:%02d", sec / 60, sec % 60)
 
+/** Metres to two decimals without the unit, "1.20", for object sizes and heights. */
+fun formatMetres(m: Float): String = String.format(Locale.US, "%.2f", m)
+
+/** Square metres to one decimal without the unit, "12.3". */
+fun formatArea(m2: Float): String = String.format(Locale.US, "%.1f", m2)
+
 @Composable
 fun EmptyState(icon: ImageVector, title: String, body: String, modifier: Modifier = Modifier) {
     Column(

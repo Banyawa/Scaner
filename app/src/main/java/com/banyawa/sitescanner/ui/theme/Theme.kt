@@ -53,4 +53,12 @@ object PlanColors {
     /** Scan points standing in front of a wall on an elevation (sockets, pipes, cabinets). */
     val ElevationFront = Color(0xFFEF6C00)
     val ElevationKey = Color(0xFFE65100)
+
+    /** Free-standing objects (machines, cabinets, pallets) found in the surface model. */
+    val ObjectLine = Color(0xFFEF6C00)
+    val ObjectFill = Color(0x33FF9800)
+
+    /** Ceiling height tint on the plan: blue where high, red where low, around the typical height. */
+    val CeilingHigh = Color(0xFF1E6FD9)
+    val CeilingLow = Color(0xFFD32F2F)
 }
