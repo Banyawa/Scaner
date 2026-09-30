@@ -110,6 +110,64 @@ class ProjectRepositoryTest {
     }
 
     @Test
+    fun mediaIsAddedRemovedWithItsFileAndDeletedWithTheProject() {
+        val repo = repo()
+        val p = repo.create("P")
+        val photo = repo.newMedia(p.id, MediaKind.PHOTO, "jpg")
+        assertEquals(File(repo.projectDir(p.id), "media"), repo.mediaDir(p.id))
+        assertTrue(repo.mediaDir(p.id).isDirectory)
+        assertTrue(photo.fileName, Regex("IMG_\\d{8}_\\d{6}\\.jpg").matches(photo.fileName))
+        assertEquals(now, photo.createdAt)
+        val photoFile = repo.mediaFile(p.id, photo).apply { writeText("jpg") }
+        assertEquals(File(repo.mediaDir(p.id), photo.fileName), photoFile)
+
+        now += 5
+        val video = repo.newMedia(p.id, MediaKind.VIDEO, ".MP4").copy(note = "leak under the sink")
+        assertTrue(video.fileName, Regex("VID_\\d{8}_\\d{6}\\.mp4").matches(video.fileName))
+        repo.mediaFile(p.id, video).writeText("mp4")
+        repo.addMedia(p.id, photo)
+        val updated = repo.addMedia(p.id, video)
+        assertEquals(listOf(photo, video), updated.media)
+        assertEquals(now, updated.updatedAt)
+        assertEquals(listOf(photo, video), ProjectRepository(tmp.root).get(p.id)!!.media)
+        assertEquals("leak under the sink", repo.get(p.id)!!.mediaItem(video.id)!!.note)
+
+        // Adding a record again replaces it, keeping the order by time.
+        val noted = photo.copy(note = "north wall")
+        assertEquals(listOf(noted, video), repo.addMedia(p.id, noted).media)
+
+        assertEquals(listOf(video), repo.removeMedia(p.id, photo.id)!!.media)
+        assertFalse(photoFile.exists())
+        assertTrue(repo.mediaFile(p.id, video).exists())
+        assertEquals(listOf(video), repo.removeMedia(p.id, "missing")!!.media)
+        assertNull(repo.removeMedia("missing", video.id))
+
+        val dir = repo.mediaDir(p.id)
+        assertTrue(repo.delete(p.id))
+        assertFalse(dir.exists())
+    }
+
+    @Test
+    fun mediaNamesDoNotCollideAndOldProjectsHaveNone() {
+        val repo = repo()
+        val p = repo.create("P")
+        // Two photos in the same second get different names; a default extension fills in for none.
+        val first = repo.newMedia(p.id, MediaKind.PHOTO, "jpg")
+        repo.mediaFile(p.id, first).writeText("1")
+        val second = repo.newMedia(p.id, MediaKind.PHOTO, "jpg")
+        assertEquals(first.fileName.removeSuffix(".jpg") + "_1.jpg", second.fileName)
+        repo.mediaFile(p.id, second).writeText("2")
+        assertEquals(first.fileName.removeSuffix(".jpg") + "_2.jpg", repo.newMedia(p.id, MediaKind.PHOTO, "jpg").fileName)
+        assertTrue(repo.newMedia(p.id, MediaKind.VIDEO, "").fileName.endsWith(".mp4"))
+
+        // A project saved before media existed still loads, without any.
+        File(tmp.root, "old").mkdirs()
+        File(tmp.root, "old/project.json").writeText("""{"id":"old","name":"Old","createdAt":1,"updatedAt":1,"scans":[]}""")
+        assertTrue(repo.get("old")!!.media.isEmpty())
+        assertFalse(repo.mediaFile("old", first).exists())
+    }
+
+    @Test
     fun corruptProjectIsSkipped() {
         val repo = repo()
         repo.create("ok")

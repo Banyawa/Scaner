@@ -2,6 +2,9 @@ package com.banyawa.sitescanner.core.project
 
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 /**
@@ -9,6 +12,7 @@ import java.util.UUID
  * ```
  * <root>/<projectId>/project.json
  * <root>/<projectId>/scan_<scanId>.ply
+ * <root>/<projectId>/media/IMG_<date>_<time>.jpg, VID_<date>_<time>.mp4
  * ```
  * Plain files keep projects easy to back up or copy off the device.
  */
@@ -116,6 +120,45 @@ class ProjectRepository(private val rootDir: File, private val clock: () -> Long
         return update(project.copy(scans = project.scans.filterNot { it.id == scanId }))
     }
 
+    /** The project's photos and videos folder, created on demand. */
+    fun mediaDir(projectId: String): File = File(projectDir(projectId), MEDIA_DIR).apply { mkdirs() }
+
+    /** Where [item]'s photo or video is (or goes); [mediaDir] must exist before writing it. */
+    fun mediaFile(projectId: String, item: MediaItem): File = File(File(projectDir(projectId), MEDIA_DIR), item.fileName)
+
+    /**
+     * A record for a new photo or video, named `IMG_yyyyMMdd_HHmmss.<extension>` (`VID_` for
+     * videos) after [createdAt], with a counter appended while that name is taken. The caller
+     * writes the file at [mediaFile], then [addMedia] keeps the record.
+     */
+    fun newMedia(projectId: String, kind: MediaKind, extension: String, createdAt: Long = clock()): MediaItem {
+        val prefix = if (kind == MediaKind.PHOTO) "IMG" else "VID"
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date(createdAt))
+        val ext = extension.trim().trimStart('.').lowercase(Locale.US).ifEmpty { if (kind == MediaKind.PHOTO) "jpg" else "mp4" }
+        val dir = mediaDir(projectId)
+        var name = "${prefix}_$stamp.$ext"
+        var n = 1
+        while (File(dir, name).exists()) name = "${prefix}_${stamp}_${n++}.$ext"
+        return MediaItem(id = newId(), fileName = name, kind = kind, createdAt = createdAt)
+    }
+
+    /** Adds [item] to the project, or replaces the record with the same id (e.g. an edited note). */
+    @Synchronized
+    fun addMedia(projectId: String, item: MediaItem): Project {
+        val project = get(projectId) ?: error("Project $projectId not found")
+        val media = project.media.filterNot { it.id == item.id } + item
+        return update(project.copy(media = media.sortedBy { it.createdAt }))
+    }
+
+    /** Removes the record and deletes its file; null when the project does not exist. */
+    @Synchronized
+    fun removeMedia(projectId: String, mediaId: String): Project? {
+        val project = get(projectId) ?: return null
+        val item = project.mediaItem(mediaId) ?: return project
+        mediaFile(projectId, item).delete()
+        return update(project.copy(media = project.media.filterNot { it.id == mediaId }))
+    }
+
     private fun read(file: File): Project? =
         try {
             if (file.isFile) json.decodeFromString(Project.serializer(), file.readText()) else null
@@ -138,6 +181,7 @@ class ProjectRepository(private val rootDir: File, private val clock: () -> Long
 
     companion object {
         const val PROJECT_FILE = "project.json"
+        const val MEDIA_DIR = "media"
         private const val TEMP_CAPTURE_PREFIX = "capture_tmp_"
     }
 }

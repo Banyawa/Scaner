@@ -10,8 +10,10 @@
     <string name="action_discard">Discard</string>
     <string name="action_export">Export</string>
     <string name="action_floor_plan">Floor plan</string>
+    <string name="action_open">Open</string>
     <string name="action_retry">Try again</string>
     <string name="action_save">Save</string>
+    <string name="action_share">Share</string>
     <string name="action_view_3d">3D view</string>
 
     <!-- Projects -->
@@ -23,7 +25,7 @@
     <string name="project_created">Created %1$s</string>
     <string name="project_missing">Project not found</string>
     <string name="project_delete_title">Delete project?</string>
-    <string name="project_delete_message">\"%1$s\" and all of its scans will be permanently deleted.</string>
+    <string name="project_delete_message">\"%1$s\" and all of its scans, photos and videos will be permanently deleted.</string>
     <string name="pin_none">No map pin</string>
     <string name="pin_locating">Finding your location…</string>
     <string name="pin_improving">improving accuracy…</string>
@@ -66,6 +68,28 @@
     <string name="scan_delete_message">\"%1$s\" will be permanently deleted.</string>
     <string name="scan_mode_depth">Depth</string>
     <string name="scan_mode_features">Feature points</string>
+
+    <!-- Photos & videos -->
+    <string name="media_section_title">Photos &amp; videos</string>
+    <string name="media_take_photo">Take photo</string>
+    <string name="media_record_video">Record video</string>
+    <string name="media_import">From gallery</string>
+    <string name="media_empty">No photos or videos yet. Take some of the site to keep them next to the scans.</string>
+    <plurals name="media_count">
+        <item quantity="one">%d photo/video</item>
+        <item quantity="other">%d photos/videos</item>
+    </plurals>
+    <string name="media_photo">Photo</string>
+    <string name="media_video">Video</string>
+    <string name="media_more">More</string>
+    <string name="media_camera_permission">Camera permission is needed to take photos and videos.</string>
+    <string name="media_no_camera_app">No camera app found on this phone.</string>
+    <string name="media_no_viewer_app">No app on this phone can open this file.</string>
+    <string name="media_import_failed">Some files could not be imported.</string>
+    <string name="media_delete_photo_title">Delete photo?</string>
+    <string name="media_delete_video_title">Delete video?</string>
+    <string name="media_delete_message">\"%1$s\" will be permanently deleted.</string>
+    <string name="media_share_title">Share photo / video</string>
 
     <!-- Scanning (AR) -->
     <string name="scan_status_starting">Starting AR…</string>

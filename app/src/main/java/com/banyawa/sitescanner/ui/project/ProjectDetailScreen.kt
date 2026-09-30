@@ -1,6 +1,15 @@
 package com.banyawa.sitescanner.ui.project
 
+import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.webkit.MimeTypeMap
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -57,6 +66,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,6 +75,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import kotlin.math.roundToInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
@@ -78,6 +89,8 @@ import com.banyawa.sitescanner.app
 import com.banyawa.sitescanner.core.project.CaptureMode
 import com.banyawa.sitescanner.core.project.GeoPin
 import com.banyawa.sitescanner.core.project.Measurement
+import com.banyawa.sitescanner.core.project.MediaItem
+import com.banyawa.sitescanner.core.project.MediaKind
 import com.banyawa.sitescanner.core.project.Project
 import com.banyawa.sitescanner.core.project.ScanInfo
 import com.banyawa.sitescanner.core.units.LengthFormat
@@ -105,6 +118,8 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.IOException
 
 class ProjectDetailViewModel(private val projectId: String, private val app: SiteScannerApp) : ViewModel() {
     private val repository = app.repository
@@ -121,6 +136,10 @@ class ProjectDetailViewModel(private val projectId: String, private val app: Sit
 
     private val _events = MutableSharedFlow<ExportEvent>(extraBufferCapacity = 4)
     val events: SharedFlow<ExportEvent> = _events.asSharedFlow()
+
+    /** One-off notices for the snackbar, as string resources. */
+    private val _messages = MutableSharedFlow<Int>(extraBufferCapacity = 4)
+    val messages: SharedFlow<Int> = _messages.asSharedFlow()
 
     /** Progress (0..1) of the 3D models being generated, by scan id. */
     val building: StateFlow<Map<String, Float>> = app.modelBuilder.progress
@@ -173,6 +192,64 @@ class ProjectDetailViewModel(private val projectId: String, private val app: Sit
         }
     }
 
+    fun notify(@StringRes message: Int) {
+        _messages.tryEmit(message)
+    }
+
+    fun mediaFile(item: MediaItem): File = repository.mediaFile(projectId, item)
+
+    /** A record and file for the camera app to write to; [captureFinished] keeps or drops it. */
+    fun newCapture(kind: MediaKind): MediaItem =
+        repository.newMedia(projectId, kind, if (kind == MediaKind.PHOTO) "jpg" else "mp4")
+
+    /** Keeps the photo / video the camera app wrote, or drops the empty file when it was cancelled. */
+    fun captureFinished(item: MediaItem, saved: Boolean) {
+        viewModelScope.launch {
+            _project.value = withContext(Dispatchers.IO) {
+                val file = repository.mediaFile(projectId, item)
+                if (saved && file.length() > 0) {
+                    repository.addMedia(projectId, item)
+                } else {
+                    file.delete()
+                    repository.get(projectId)
+                }
+            }
+        }
+    }
+
+    /** Copies photos and videos picked from the gallery into the project's media folder. */
+    fun importMedia(uris: List<Uri>) {
+        viewModelScope.launch {
+            var failed = 0
+            _project.value = withContext(Dispatchers.IO) {
+                val resolver = app.contentResolver
+                for (uri in uris) {
+                    val mime = resolver.getType(uri)
+                    val kind = if (mime?.startsWith("video/") == true) MediaKind.VIDEO else MediaKind.PHOTO
+                    val extension = mime?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) }.orEmpty()
+                    val item = repository.newMedia(projectId, kind, extension)
+                    val file = repository.mediaFile(projectId, item)
+                    try {
+                        val input = resolver.openInputStream(uri) ?: throw IOException("Cannot read $uri")
+                        input.use { source -> file.outputStream().use { source.copyTo(it) } }
+                        repository.addMedia(projectId, item)
+                    } catch (e: Exception) {
+                        file.delete()
+                        failed++
+                    }
+                }
+                repository.get(projectId)
+            }
+            if (failed > 0) _messages.emit(R.string.media_import_failed)
+        }
+    }
+
+    fun removeMedia(item: MediaItem) {
+        viewModelScope.launch {
+            _project.value = withContext(Dispatchers.IO) { repository.removeMedia(projectId, item.id) }
+        }
+    }
+
     fun export(scan: ScanInfo, format: ExportFormat) {
         val project = _project.value ?: return
         if (_exporting.value) return
@@ -216,11 +293,55 @@ fun ProjectDetailScreen(
             }
         }
     }
+    LaunchedEffect(vm) {
+        vm.messages.collect { snackbar.showSnackbar(context.getString(it)) }
+    }
     val arSupported = rememberArSupport(context)
 
     var editing by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<ScanInfo?>(null) }
+    var pendingMediaDelete by remember { mutableStateOf<MediaItem?>(null) }
     var renaming by remember { mutableStateOf<Pair<ScanInfo, Measurement>?>(null) }
+
+    // The photo / video the camera app is writing; survives rotation and the process being killed meanwhile.
+    var pendingCapture by rememberSaveable(stateSaver = PendingMediaSaver) { mutableStateOf<MediaItem?>(null) }
+    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        pendingCapture?.let { vm.captureFinished(it, saved) }
+        pendingCapture = null
+    }
+    val captureVideo = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { saved ->
+        pendingCapture?.let { vm.captureFinished(it, saved) }
+        pendingCapture = null
+    }
+    val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia()) { uris ->
+        if (uris.isNotEmpty()) vm.importMedia(uris)
+    }
+    fun startCapture(kind: MediaKind) {
+        val item = vm.newCapture(kind)
+        val uri = mediaUri(context, vm.mediaFile(item))
+        pendingCapture = item
+        try {
+            if (kind == MediaKind.PHOTO) takePicture.launch(uri) else captureVideo.launch(uri)
+        } catch (e: ActivityNotFoundException) {
+            pendingCapture = null
+            vm.notify(R.string.media_no_camera_app)
+        }
+    }
+    // With CAMERA declared in the manifest, the camera intent only works once the app holds the permission.
+    var wantedCapture by remember { mutableStateOf<MediaKind?>(null) }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val kind = wantedCapture
+        wantedCapture = null
+        if (!granted) vm.notify(R.string.media_camera_permission) else if (kind != null) startCapture(kind)
+    }
+    fun capture(kind: MediaKind) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            startCapture(kind)
+        } else {
+            wantedCapture = kind
+            cameraPermission.launch(Manifest.permission.CAMERA)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -260,6 +381,30 @@ fun ProjectDetailScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     item { ProjectHeader(p, arSupported) }
+                    item {
+                        MediaActions(
+                            count = p.media.size,
+                            onTakePhoto = { capture(MediaKind.PHOTO) },
+                            onRecordVideo = { capture(MediaKind.VIDEO) },
+                            onImport = {
+                                val request = PickVisualMediaRequest.Builder()
+                                    .setMediaType(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                                    .build()
+                                pickMedia.launch(request)
+                            },
+                        )
+                    }
+                    items(p.media.asReversed().chunked(MEDIA_COLUMNS), key = { row -> row.first().id }) { row ->
+                        MediaRow(
+                            items = row,
+                            columns = MEDIA_COLUMNS,
+                            fileOf = { vm.mediaFile(it) },
+                            onOpen = { item -> if (!openMedia(context, item, vm.mediaFile(item))) vm.notify(R.string.media_no_viewer_app) },
+                            onShare = { item -> shareMedia(context, item, vm.mediaFile(item)) },
+                            onDelete = { pendingMediaDelete = it },
+                        )
+                    }
+                    item { HorizontalDivider(Modifier.padding(vertical = 4.dp)) }
                     if (p.scans.isEmpty()) {
                         item {
                             EmptyState(
@@ -319,6 +464,23 @@ fun ProjectDetailScreen(
         )
     }
 
+    pendingMediaDelete?.let { item ->
+        AlertDialog(
+            onDismissRequest = { pendingMediaDelete = null },
+            title = {
+                Text(stringResource(if (item.kind == MediaKind.VIDEO) R.string.media_delete_video_title else R.string.media_delete_photo_title))
+            },
+            text = { Text(stringResource(R.string.media_delete_message, item.fileName)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.removeMedia(item)
+                    pendingMediaDelete = null
+                }) { Text(stringResource(R.string.action_delete)) }
+            },
+            dismissButton = { TextButton(onClick = { pendingMediaDelete = null }) { Text(stringResource(R.string.action_cancel)) } },
+        )
+    }
+
     renaming?.let { (scan, measurement) ->
         var label by rememberSaveable(measurement.id) { mutableStateOf(measurement.label) }
         AlertDialog(
@@ -342,6 +504,12 @@ fun ProjectDetailScreen(
         )
     }
 }
+
+/** Keeps the capture in progress across rotation and the process being killed behind the camera app. */
+private val PendingMediaSaver = listSaver<MediaItem?, Any>(
+    save = { item -> item?.let { listOf(it.id, it.fileName, it.kind.name, it.createdAt) } ?: emptyList() },
+    restore = { v -> if (v.isEmpty()) null else MediaItem(v[0] as String, v[1] as String, MediaKind.valueOf(v[2] as String), v[3] as Long) },
+)
 
 /** null while ARCore availability is still being determined. */
 @Composable

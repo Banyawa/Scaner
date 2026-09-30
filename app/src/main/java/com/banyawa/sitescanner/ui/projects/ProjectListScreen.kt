@@ -175,8 +175,11 @@ private fun ProjectCard(project: Project, onClick: () -> Unit, onDelete: () -> U
                     Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(
-                    pluralStringResource(R.plurals.scan_count, project.scans.size, project.scans.size) +
-                        " · " + formatDateTime(project.updatedAt),
+                    listOfNotNull(
+                        pluralStringResource(R.plurals.scan_count, project.scans.size, project.scans.size),
+                        project.media.size.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.media_count, it, it) },
+                        formatDateTime(project.updatedAt),
+                    ).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
