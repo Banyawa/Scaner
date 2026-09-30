@@ -98,6 +98,7 @@ import com.banyawa.sitescanner.data.ExportEvent
 import com.banyawa.sitescanner.data.ExportFormat
 import com.banyawa.sitescanner.data.ExportManager
 import com.banyawa.sitescanner.scan.ScanActivity
+import com.banyawa.sitescanner.scan.ScanGuidePrefs
 import com.banyawa.sitescanner.ui.common.EmptyState
 import com.banyawa.sitescanner.ui.common.formatCount
 import com.banyawa.sitescanner.ui.common.formatDateTime
@@ -301,6 +302,9 @@ fun ProjectDetailScreen(
     var editing by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<ScanInfo?>(null) }
     var pendingMediaDelete by remember { mutableStateOf<MediaItem?>(null) }
+    // The scanning briefing, until the user has had enough of it.
+    var briefing by rememberSaveable { mutableStateOf(false) }
+    val startScan = { context.startActivity(ScanActivity.newIntent(context, projectId)) }
     var renaming by remember { mutableStateOf<Pair<ScanInfo, Measurement>?>(null) }
 
     // The photo / video the camera app is writing; survives rotation and the process being killed meanwhile.
@@ -361,7 +365,13 @@ fun ProjectDetailScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { context.startActivity(ScanActivity.newIntent(context, projectId)) },
+                onClick = {
+                    if (ScanGuidePrefs.briefingWanted(context)) {
+                        briefing = true
+                    } else {
+                        startScan()
+                    }
+                },
                 icon = { Icon(Icons.Filled.DocumentScanner, contentDescription = null) },
                 text = { Text(stringResource(R.string.scan_new)) },
             )
@@ -461,6 +471,17 @@ fun ProjectDetailScreen(
                 }) { Text(stringResource(R.string.action_delete)) }
             },
             dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.action_cancel)) } },
+        )
+    }
+
+    if (briefing) {
+        ScanBriefingDialog(
+            onStart = { dontShowAgain ->
+                if (dontShowAgain) ScanGuidePrefs.setBriefingWanted(context, false)
+                briefing = false
+                startScan()
+            },
+            onDismiss = { briefing = false },
         )
     }
 

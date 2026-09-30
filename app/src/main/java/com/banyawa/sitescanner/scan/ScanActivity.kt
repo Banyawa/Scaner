@@ -85,6 +85,7 @@ class ScanActivity : ComponentActivity() {
                 ScanScreen(
                     state = state,
                     surfaceView = surfaceView,
+                    coachByDefault = ScanGuidePrefs.coachByDefault(this),
                     onToggleRecording = ::toggleRecording,
                     onAddPoint = { controller.post(ScanAction.AddPoint) },
                     onUndo = { controller.post(ScanAction.Undo) },
@@ -207,6 +208,7 @@ class ScanActivity : ComponentActivity() {
     private fun toggleRecording() {
         val on = !controller.recording
         if (on && controller.recorder == null) {
+            ScanGuidePrefs.noteRecording(this)
             val dir = (application as SiteScannerApp).repository.newCaptureDir(projectId)
             controller.recorder = try {
                 CaptureRecorder(dir)

@@ -22,10 +22,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -75,6 +77,7 @@ private val ReticleOn = Color(0xFF4CFF7A)
 fun ScanScreen(
     state: ScanUiState,
     surfaceView: GLSurfaceView,
+    coachByDefault: Boolean,
     onToggleRecording: () -> Unit,
     onAddPoint: () -> Unit,
     onUndo: () -> Unit,
@@ -84,6 +87,7 @@ fun ScanScreen(
 ) {
     var showSaveDialog by rememberSaveable { mutableStateOf(false) }
     var showExitDialog by rememberSaveable { mutableStateOf(false) }
+    var coachOpen by rememberSaveable { mutableStateOf(coachByDefault) }
     val hasData = state.pointCount > 0 || state.measurementCount > 0
 
     val requestExit: () -> Unit = {
@@ -104,11 +108,13 @@ fun ScanScreen(
         LabelsOverlay(state.labels)
         Crosshair(active = state.reticleValid, modifier = Modifier.align(Alignment.Center))
 
-        TopStatus(
-            state = state,
-            onBack = requestExit,
-            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(8.dp),
-        )
+        Column(Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(8.dp)) {
+            TopStatus(state = state, onBack = requestExit, coachOpen = coachOpen, onCoach = { coachOpen = !coachOpen })
+            if (coachOpen && state.arReady && state.errorRes == null && !state.saving) {
+                Spacer(Modifier.height(8.dp))
+                CoachCard(state, onClose = { coachOpen = false })
+            }
+        }
 
         BottomControls(
             state = state,
@@ -198,7 +204,7 @@ private fun Crosshair(active: Boolean, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun TopStatus(state: ScanUiState, onBack: () -> Unit, modifier: Modifier = Modifier) {
+private fun TopStatus(state: ScanUiState, onBack: () -> Unit, coachOpen: Boolean, onCoach: () -> Unit, modifier: Modifier = Modifier) {
     val status = when {
         !state.arReady -> stringResource(R.string.scan_status_starting)
         state.hint == TrackingHint.NONE ->
@@ -233,11 +239,91 @@ private fun TopStatus(state: ScanUiState, onBack: () -> Unit, modifier: Modifier
                 Text(state.diagnostics, color = Color.White.copy(alpha = 0.55f), style = MaterialTheme.typography.labelSmall)
             }
         }
+        IconButton(onClick = onCoach) {
+            Icon(
+                Icons.Outlined.Info,
+                contentDescription = stringResource(if (coachOpen) R.string.coach_hide else R.string.coach_show),
+                tint = if (coachOpen) Accent else Color.White,
+            )
+        }
         if (state.recording) {
             Box(Modifier.size(12.dp).background(Color.Red, RoundedCornerShape(6.dp)))
         }
     }
 }
+
+/**
+ * The scan coach: the steps of a good walk-through, ticked off as the session's progress
+ * ([ScanUiState.floorFound], [ScanUiState.turnedDeg], [ScanUiState.walkedM]) shows them done,
+ * the next one highlighted. Opens by itself for a user's first few recordings.
+ */
+@Composable
+private fun CoachCard(state: ScanUiState, onClose: () -> Unit, modifier: Modifier = Modifier) {
+    val turned = state.turnedDeg >= COACH_TURN_DEG
+    val walked = state.walkedM >= COACH_WALK_M
+    val steps = listOf(
+        stringResource(R.string.coach_step_floor) to state.floorFound,
+        stringResource(R.string.coach_step_record) to (state.recording || state.elapsedSec > 0),
+        stringResource(R.string.coach_step_turn, state.turnedDeg) to turned,
+        stringResource(R.string.coach_step_walk, LengthFormat.format(state.walkedM)) to walked,
+        stringResource(R.string.coach_step_details) to (turned && walked && state.elapsedSec >= COACH_DETAIL_SEC),
+        stringResource(R.string.coach_step_save) to false,
+    )
+    val current = steps.indexOfFirst { !it.second }.let { if (it < 0) steps.size - 1 else it }
+    val covered = steps.dropLast(1).all { it.second }
+    Column(
+        modifier
+            .fillMaxWidth()
+            .background(Overlay, RoundedCornerShape(16.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.coach_title), color = Accent, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.action_close), tint = Color.White, modifier = Modifier.size(18.dp))
+            }
+        }
+        steps.forEachIndexed { i, (text, done) ->
+            val active = i == current
+            Row(Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.Top) {
+                val badge = when {
+                    done -> ReticleOn
+                    active -> Accent
+                    else -> Color.White.copy(alpha = 0.25f)
+                }
+                Box(Modifier.size(20.dp).background(badge, RoundedCornerShape(10.dp)), contentAlignment = Alignment.Center) {
+                    if (done) {
+                        Icon(Icons.Filled.Check, contentDescription = null, tint = Color.Black, modifier = Modifier.size(14.dp))
+                    } else {
+                        Text("${i + 1}", color = if (active) Color.Black else Color.White, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text,
+                    color = if (done) Color.White.copy(alpha = 0.6f) else Color.White,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        if (covered) {
+            Text(
+                stringResource(R.string.coach_ready),
+                color = ReticleOn,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+        }
+    }
+}
+
+/** A room counts as looked around and walked when the camera has turned this far and moved this much. */
+private const val COACH_TURN_DEG = 270
+private const val COACH_WALK_M = 5f
+private const val COACH_DETAIL_SEC = 90
 
 @Composable
 private fun BottomControls(

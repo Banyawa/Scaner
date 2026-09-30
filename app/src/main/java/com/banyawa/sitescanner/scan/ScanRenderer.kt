@@ -87,6 +87,14 @@ class ScanRenderer(
     private var retryKeyframe = false
     private var lastUiMs = 0L
 
+    // What the walk has covered so far, for the on-screen coach.
+    private var floorFound = false
+    private var levelCheckMs = 0L
+    private val lookedBins = BooleanArray(LOOK_BINS)
+    private var walkedM = 0f
+    private var walkStarted = false
+    private val walkPos = FloatArray(3)
+
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         GLES20.glClearColor(0f, 0f, 0f, 1f)
         GLES20.glEnable(GLES20.GL_DEPTH_TEST)
@@ -144,6 +152,11 @@ class ScanRenderer(
         if (controller.recording) {
             integrate(session, frame, camera, now)
             checkSideways(camera, now)
+            trackCoverage(camera)
+        }
+        if (now - levelCheckMs >= LEVEL_CHECK_MS) {
+            levelCheckMs = now
+            if (!floorFound) floorFound = detectLevels(session).first != null
         }
 
         controller.preview?.let {
@@ -253,6 +266,33 @@ class ScanRenderer(
         if (moved < MOVE_CHECK_MIN_M && turned > MOVE_CHECK_TURN_DEG) sidewaysUntilMs = now + HINT_MS
         hintPose.copyInto(moveCheckPose)
         moveCheckMs = now
+    }
+
+    /** Adds the camera's heading to the turn covered and its movement to the distance walked. */
+    private fun trackCoverage(camera: Camera) {
+        val p = camera.pose
+        if (!walkStarted) {
+            walkPos[0] = p.tx(); walkPos[1] = p.ty(); walkPos[2] = p.tz()
+            walkStarted = true
+        } else {
+            val dx = p.tx() - walkPos[0]
+            val dy = p.ty() - walkPos[1]
+            val dz = p.tz() - walkPos[2]
+            val d = kotlin.math.sqrt(dx * dx + dy * dy + dz * dz)
+            // Counted in steps, so standing still with a shaky hand adds nothing.
+            if (d >= WALK_STEP_M) {
+                walkedM += d
+                walkPos[0] = p.tx(); walkPos[1] = p.ty(); walkPos[2] = p.tz()
+            }
+        }
+        // The camera looks down its −Z axis; a heading only counts when it is not aimed at the floor or ceiling.
+        val z = p.zAxis
+        val fx = -z[0]
+        val fz = -z[2]
+        if (fx * fx + fz * fz < MIN_LEVEL_LOOK * MIN_LEVEL_LOOK) return
+        val yaw = kotlin.math.atan2(fx, fz)
+        val bin = ((yaw + Math.PI) / (2 * Math.PI) * LOOK_BINS).toInt().coerceIn(0, LOOK_BINS - 1)
+        lookedBins[bin] = true
     }
 
     private fun collectDepth(frame: Frame, camera: Camera) {
@@ -453,6 +493,9 @@ class ScanRenderer(
                 measurementCount = measurements.size,
                 labels = labels,
                 diagnostics = diagnostics(camera),
+                floorFound = floorFound,
+                turnedDeg = lookedBins.count { b -> b } * (360 / LOOK_BINS),
+                walkedM = walkedM,
             )
         }
     }
@@ -473,6 +516,12 @@ class ScanRenderer(
 
         private const val ANCHOR_SPACING_M = 0.5f
         private const val MAX_ANCHORS = 150
+
+        /** Coach progress: headings in 30° bins, steps of walking counted, and how often the floor is looked for. */
+        private const val LOOK_BINS = 12
+        private const val MIN_LEVEL_LOOK = 0.5f
+        private const val WALK_STEP_M = 0.1f
+        private const val LEVEL_CHECK_MS = 1_000L
 
         private const val MOVE_CHECK_MS = 2_500L
         private const val MOVE_CHECK_MIN_M = 0.06f

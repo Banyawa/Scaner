@@ -46,6 +46,12 @@ data class ScanUiState(
     val buildProgress: Float? = null,
     /** Phone, depth source and frame counts: what a screenshot needs for troubleshooting. */
     val diagnostics: String = "",
+    /** Coach progress: ARCore has found the floor. */
+    val floorFound: Boolean = false,
+    /** Coach progress: degrees of the full turn the camera has looked around while recording (0..360). */
+    val turnedDeg: Int = 0,
+    /** Coach progress: metres walked while recording. */
+    val walkedM: Float = 0f,
 )
 
 sealed interface ScanAction {

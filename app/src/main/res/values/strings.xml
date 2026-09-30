@@ -220,4 +220,26 @@
     <string name="elevations_preparing">Preparing elevations…</string>
     <string name="elevations_empty">No walls to draw. Scan the walls between knee and head height, keeping 1–3 m away.</string>
     <string name="export_elevations_dxf">Elevations DXF (AutoCAD)</string>
+    <!-- Scan briefing and coach -->
+    <string name="scan_briefing_title">Before you scan</string>
+    <string-array name="scan_briefing_tips">
+        <item>Hold the phone upright at chest height and move slowly and smoothly.</item>
+        <item>Walk sideways along each wall, 1–2 m from it, instead of turning on the spot.</item>
+        <item>Cover corners, under and behind furniture, and door and window reveals.</item>
+        <item>Keep recording while you walk through a door into the next room.</item>
+        <item>Good light helps; glass, mirrors and bare white walls confuse the camera.</item>
+        <item>Press ✓ when done and let the 3D model generate — it keeps working in the background.</item>
+    </string-array>
+    <string name="scan_briefing_dont_show">Don\'t show this again</string>
+    <string name="scan_briefing_start">Start scanning</string>
+    <string name="coach_title">Scan coach</string>
+    <string name="coach_show">Show the scan coach</string>
+    <string name="coach_hide">Hide the scan coach</string>
+    <string name="coach_step_floor">Point the camera at the floor and move slowly until it is found</string>
+    <string name="coach_step_record">Press the round button to start recording</string>
+    <string name="coach_step_turn">Turn slowly all the way round (%1$d° so far)</string>
+    <string name="coach_step_walk">Walk sideways along each wall, 1–2 m away (%1$s walked)</string>
+    <string name="coach_step_details">Cover corners, under and behind furniture, doors and windows</string>
+    <string name="coach_step_save">Press ✓ to save, then wait for the 3D model</string>
+    <string name="coach_ready">All covered! Press ✓ to save, or keep recording into the next room.</string>
 </resources>

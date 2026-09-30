@@ -217,4 +217,26 @@
     <string name="elevations_preparing">กำลังเตรียมรูปด้าน…</string>
     <string name="elevations_empty">ไม่มีผนังให้วาด ให้สแกนผนังช่วงระดับเข่าถึงระดับศีรษะ โดยยืนห่าง 1–3 เมตร</string>
     <string name="export_elevations_dxf">รูปด้าน DXF (AutoCAD)</string>
+    <!-- Scan briefing and coach -->
+    <string name="scan_briefing_title">ก่อนเริ่มสแกน</string>
+    <string-array name="scan_briefing_tips">
+        <item>ถือมือถือตั้งตรงระดับอก ขยับช้า ๆ และนิ่ง ๆ</item>
+        <item>เดินเลียบผนังทีละด้าน ห่างประมาณ 1–2 เมตร แทนการยืนหมุนอยู่กับที่</item>
+        <item>เก็บมุมห้อง ใต้และหลังเฟอร์นิเจอร์ วงกบประตูและหน้าต่างให้ครบ</item>
+        <item>เดินผ่านประตูไปห้องถัดไปได้เลยโดยไม่ต้องหยุดอัด</item>
+        <item>แสงสว่างช่วยได้มาก กระจก กระจกเงา และผนังขาวโล่งทำให้กล้องหลง</item>
+        <item>เสร็จแล้วกด ✓ แล้วรอสร้างโมเดล 3D ซึ่งทำต่อในพื้นหลังได้</item>
+    </string-array>
+    <string name="scan_briefing_dont_show">ไม่ต้องแสดงอีก</string>
+    <string name="scan_briefing_start">เริ่มสแกน</string>
+    <string name="coach_title">โค้ชสแกน</string>
+    <string name="coach_show">แสดงโค้ชสแกน</string>
+    <string name="coach_hide">ซ่อนโค้ชสแกน</string>
+    <string name="coach_step_floor">เล็งกล้องไปที่พื้น ขยับช้า ๆ จนโปรแกรมจับพื้นได้</string>
+    <string name="coach_step_record">กดปุ่มกลมเพื่อเริ่มอัด</string>
+    <string name="coach_step_turn">หมุนตัวช้า ๆ ให้ครบรอบ (ได้ %1$d° แล้ว)</string>
+    <string name="coach_step_walk">เดินเลียบผนังทีละด้าน ห่าง 1–2 ม. (เดินแล้ว %1$s)</string>
+    <string name="coach_step_details">เก็บมุมห้อง ใต้/หลังเฟอร์นิเจอร์ ประตูและหน้าต่าง</string>
+    <string name="coach_step_save">กด ✓ เพื่อบันทึก แล้วรอสร้างโมเดล 3D</string>
+    <string name="coach_ready">ครบแล้ว! กด ✓ เพื่อบันทึก หรือเดินต่อไปห้องถัดไปโดยไม่หยุดอัด</string>
 </resources>
