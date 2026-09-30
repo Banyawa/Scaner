@@ -1,7 +1,7 @@
 package com.banyawa.sitescanner.core.export
 
 /**
- * Minimal ASCII DXF (AutoCAD R12 / AC1009) writer: layers, LINE, ARC, CIRCLE, TEXT and POINT.
+ * Minimal ASCII DXF (AutoCAD R12 / AC1009) writer: layers, LINE, ARC, CIRCLE, TEXT, POINT and POLYLINE.
  * R12 is the most widely readable DXF flavour (AutoCAD, BricsCAD, ZWCAD, LibreCAD,
  * QCAD, SketchUp, Revit). Non-ASCII text (e.g. Thai labels) is written as \U+XXXX escapes.
  */
@@ -65,6 +65,30 @@ class DxfDocument {
         entity("POINT", layer)
         pair(10, x); pair(20, y); pair(30, z)
         extend(x, y, z)
+    }
+
+    /**
+     * 2D polyline through [xy] (x0, y0, x1, y1, …), [closed] back to its first point: the
+     * R12 POLYLINE / VERTEX / SEQEND form, which every reader of AC1009 files understands
+     * (LWPOLYLINE only came with R14). Fewer than two points draws nothing.
+     */
+    fun polyline(layer: String, xy: DoubleArray, closed: Boolean = false) {
+        require(xy.size % 2 == 0) { "x, y pairs" }
+        if (xy.size < 4) return
+        ensureLayer(layer)
+        entity("POLYLINE", layer)
+        val name = layers.getValue(layer).name
+        pair(66, 1) // Vertices follow.
+        pair(10, 0.0); pair(20, 0.0); pair(30, 0.0)
+        pair(70, if (closed) 1 else 0)
+        for (i in 0 until xy.size / 2) {
+            pair(0, "VERTEX")
+            pair(8, name)
+            pair(10, xy[i * 2]); pair(20, xy[i * 2 + 1]); pair(30, 0.0)
+            extend(xy[i * 2], xy[i * 2 + 1], 0.0)
+        }
+        pair(0, "SEQEND")
+        pair(8, name)
     }
 
     /**

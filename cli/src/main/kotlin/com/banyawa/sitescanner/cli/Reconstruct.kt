@@ -5,15 +5,19 @@ import com.banyawa.sitescanner.core.capture.CaptureZip
 import com.banyawa.sitescanner.core.capture.ProgressListener
 import com.banyawa.sitescanner.core.capture.ReconstructionOptions
 import com.banyawa.sitescanner.core.capture.Reconstructor
+import com.banyawa.sitescanner.core.export.FloorPlanDxf
 import com.banyawa.sitescanner.core.export.Glb
 import com.banyawa.sitescanner.core.export.MeshFrames
 import com.banyawa.sitescanner.core.export.MeshObj
 import com.banyawa.sitescanner.core.export.MeshPly
+import com.banyawa.sitescanner.core.export.ObjectCsv
 import com.banyawa.sitescanner.core.export.Ply
 import com.banyawa.sitescanner.core.floorplan.FloorPlanExtractor
 import com.banyawa.sitescanner.core.floorplan.SiteAlignment
 import com.banyawa.sitescanner.core.mesh.MeshTexturer
 import com.banyawa.sitescanner.core.mesh.TexturingOptions
+import com.banyawa.sitescanner.core.scene.SceneClassifier
+import com.banyawa.sitescanner.core.scene.SceneLayer
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -79,9 +83,19 @@ fun main(args: Array<String>) {
     val result = Reconstructor(JvmImageDecoder, options).reconstruct(capture, progress)
     println("Points: ${result.cloud.size}, model: ${result.mesh.triangleCount} triangles, ${(System.currentTimeMillis() - start) / 1000} s")
 
-    val alignment = runCatching { FloorPlanExtractor().extract(result.cloud, result.floorY).plan.alignment }
-        .getOrDefault(SiteAlignment(floorY = result.floorY ?: 0f))
+    val planResult = runCatching { FloorPlanExtractor().extract(result.cloud, result.floorY) }.getOrNull()
+    val alignment = planResult?.plan?.alignment ?: SiteAlignment(floorY = result.floorY ?: 0f)
     Ply.write(result.cloud, File(outDir, "points.ply"), alignment)
+    if (planResult != null && !result.mesh.isEmpty()) {
+        val scene = SceneClassifier.classify(result.mesh, planResult.plan)
+        fun m2(layer: SceneLayer) = "%.1f".format(scene.area(layer))
+        println("Scene: floor ${m2(SceneLayer.FLOOR)} m2, walls ${m2(SceneLayer.WALL)} m2, ceiling ${m2(SceneLayer.CEILING)} m2, objects ${m2(SceneLayer.OBJECT)} m2 in ${scene.objects.size} pieces")
+        scene.ceiling?.let { println("Clear height: typical %.2f m, lowest %.2f m at %s".format(it.typicalHeight, it.minHeight, it.minAt)) }
+        File(outDir, "objects.csv").writeText(ObjectCsv.toString(scene.objects))
+        File(outDir, "plan.dxf").bufferedWriter().use {
+            FloorPlanDxf.build(planResult.plan, planResult.slice, objects = scene.objects, ceiling = scene.ceiling).write(it)
+        }
+    }
     if (!result.mesh.isEmpty()) {
         File(outDir, "model.glb").outputStream().use { Glb.write(MeshFrames.siteYUp(result.mesh, alignment), it, captureDir.name) }
         File(outDir, "model.obj").bufferedWriter().use { MeshObj.write(MeshFrames.siteYUp(result.mesh, alignment), it) }

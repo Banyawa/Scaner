@@ -8,13 +8,18 @@ import com.banyawa.sitescanner.core.floorplan.OpeningTags
 import com.banyawa.sitescanner.core.floorplan.OpeningType
 import com.banyawa.sitescanner.core.geometry.Vec2
 import com.banyawa.sitescanner.core.project.Measurement
+import com.banyawa.sitescanner.core.scene.CeilingMap
+import com.banyawa.sitescanner.core.scene.SceneObject
 import com.banyawa.sitescanner.core.units.LengthFormat
 import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
  * Builds a 2D plan drawing in millimetres: walls, aligned dimension strings, door and
- * window symbols with tags and a schedule, AR measurements (as 3D lines), elevation keys
- * and, optionally, the raw scan slice as a tracing underlay.
+ * window symbols with tags and a schedule, AR measurements (as 3D lines), elevation keys,
+ * the objects found standing in the room (footprints, tags and a schedule), the clear
+ * height under the ceiling and, optionally, the raw scan slice as a tracing underlay.
  */
 object FloorPlanDxf {
     const val LAYER_WALLS = "A-WALL"
@@ -27,6 +32,9 @@ object FloorPlanDxf {
     const val LAYER_TAGS = "A-OPEN-TAG"
     const val LAYER_SCHEDULE = "A-SCHED"
     const val LAYER_ELEVATION_KEYS = "A-ELEV-KEY"
+    const val LAYER_OBJECTS = "A-OBJECT"
+    const val LAYER_OBJECT_TAGS = "A-OBJECT-TAG"
+    const val LAYER_CEILING = "A-CEIL-HT"
 
     data class Options(
         val title: String? = null,
@@ -34,15 +42,23 @@ object FloorPlanDxf {
         val textHeightMm: Double = 100.0,
         val includeSlice: Boolean = true,
         val maxSlicePoints: Int = 60_000,
+        /** Also write the ceiling map's heights over the plan, the lowest of each 1 m square as text. */
+        val ceilingGrid: Boolean = false,
     )
 
-    /** [elevations] get their keys marked outside the walls they show. */
+    /**
+     * [elevations] get their keys marked outside the walls they show; [objects] are drawn as
+     * footprints with "M<id>" tags and scheduled; [ceiling] adds the clear-height note and
+     * marks the lowest overhead point when a beam or duct hangs under the ceiling.
+     */
     fun build(
         plan: FloorPlan,
         slice: FloatArray? = null,
         measurements: List<Measurement> = emptyList(),
         options: Options = Options(),
         elevations: List<Elevation> = emptyList(),
+        objects: List<SceneObject> = emptyList(),
+        ceiling: CeilingMap? = null,
     ): DxfDocument {
         val dxf = DxfDocument()
             .layer(LAYER_WALLS, 7)
@@ -55,6 +71,8 @@ object FloorPlanDxf {
             .layer(LAYER_TAGS, 6)
             .layer(LAYER_SCHEDULE, 3)
         if (elevations.isNotEmpty()) dxf.layer(LAYER_ELEVATION_KEYS, 30)
+        if (objects.isNotEmpty()) dxf.layer(LAYER_OBJECTS, 6).layer(LAYER_OBJECT_TAGS, 6)
+        if (ceiling != null) dxf.layer(LAYER_CEILING, 4)
         val th = options.textHeightMm
 
         if (options.includeSlice && slice != null && slice.isNotEmpty()) {
@@ -78,6 +96,8 @@ object FloorPlanDxf {
         val tags = OpeningTags.assign(plan.openings)
         for (o in plan.openings) opening(dxf, o, tags.getValue(o.id), th)
         for (e in elevations) elevationKey(dxf, e, options)
+        for (o in objects) objectFootprint(dxf, o, th)
+        if (ceiling != null) ceilingHeights(dxf, ceiling, th, options.ceilingGrid)
 
         for (m in measurements) {
             val a = plan.alignment.toSite(m.start)
@@ -103,26 +123,30 @@ object FloorPlanDxf {
         val margin = options.dimensionOffsetMm + th * (if (elevations.isEmpty()) 6 else 13)
         val noteX = (bounds?.min?.x ?: 0f) * 1000.0
         var noteY = (bounds?.max?.y ?: 0f) * 1000.0 + margin
+        // Layer and text of each note line, top to bottom.
         val notes = buildList {
-            options.title?.takeIf { it.isNotBlank() }?.let { add(it) }
-            plan.roomHeight?.let { add("Floor to ceiling: ${LengthFormat.toMillimeters(it)} mm") }
-            add("Walls: ${plan.walls.size}, total length ${LengthFormat.toMillimeters(plan.totalWallLength)} mm")
+            options.title?.takeIf { it.isNotBlank() }?.let { add(LAYER_NOTES to it) }
+            plan.roomHeight?.let { add(LAYER_NOTES to "Floor to ceiling: ${LengthFormat.toMillimeters(it)} mm") }
+            if (ceiling != null && !ceiling.typicalHeight.isNaN()) add(LAYER_CEILING to clearHeightNote(ceiling))
+            add(LAYER_NOTES to "Walls: ${plan.walls.size}, total length ${LengthFormat.toMillimeters(plan.totalWallLength)} mm")
             if (plan.openings.isNotEmpty()) {
                 val doors = plan.openings.count { it.type != OpeningType.WINDOW }
                 val windows = plan.openings.count { it.type == OpeningType.WINDOW }
-                add("Doors / openings: $doors, windows: $windows (clear sizes; verify rough openings on site)")
+                add(LAYER_NOTES to "Doors / openings: $doors, windows: $windows (clear sizes; verify rough openings on site)")
             }
-            add("Units: millimetres. Generated by Site Scanner - verify critical dimensions on site.")
+            if (objects.isNotEmpty()) add(LAYER_NOTES to "Objects: ${objects.size} (M1..M${objects.size}, footprints from scan)")
+            add(LAYER_NOTES to "Units: millimetres. Generated by Site Scanner - verify critical dimensions on site.")
         }
-        for (line in notes.asReversed()) {
-            dxf.text(LAYER_NOTES, noteX, noteY, th * 1.2, line)
+        for ((layer, line) in notes.asReversed()) {
+            dxf.text(layer, noteX, noteY, th * 1.2, line)
             noteY += th * 2
         }
 
+        var scheduleTop = (bounds?.min?.y ?: 0f) * 1000.0 - margin
         if (plan.openings.isNotEmpty()) {
-            val top = (bounds?.min?.y ?: 0f) * 1000.0 - margin
-            schedule(dxf, plan.openings, tags, noteX, top, th)
+            scheduleTop = schedule(dxf, plan.openings, tags, noteX, scheduleTop, th) - th * 4
         }
+        if (objects.isNotEmpty()) objectSchedule(dxf, objects, noteX, scheduleTop, th)
         return dxf
     }
 
@@ -179,8 +203,70 @@ object FloorPlanDxf {
 
     private fun normalizeDeg(deg: Double) = ((deg % 360.0) + 360.0) % 360.0
 
-    /** Door / window schedule as a text table (one TEXT per cell so columns line up). */
-    private fun schedule(dxf: DxfDocument, openings: List<Opening>, tags: Map<String, String>, x: Double, top: Double, th: Double) {
+    /** Closed footprint outline, tagged "M<id>" with its box size along the box's long side. */
+    private fun objectFootprint(dxf: DxfDocument, o: SceneObject, th: Double) {
+        val outline = DoubleArray(o.footprint.size * 2)
+        for ((i, p) in o.footprint.withIndex()) {
+            outline[i * 2] = p.x * 1000.0
+            outline[i * 2 + 1] = p.y * 1000.0
+        }
+        dxf.polyline(LAYER_OBJECTS, outline, closed = true)
+
+        val c = o.box.centre * 1000f
+        val angle = DxfDrafting.readableAngle(Vec2(cos(o.box.yawRad), sin(o.box.yawRad)))
+        val rad = Math.toRadians(angle)
+        val up = Vec2(-sin(rad).toFloat(), cos(rad).toFloat())
+        val tagAt = c + up * (th * 0.5).toFloat()
+        dxf.text(LAYER_OBJECT_TAGS, tagAt.x.toDouble(), tagAt.y.toDouble(), th * 1.4, "M${o.id}", angle, DxfDocument.HAlign.CENTER)
+        val sizeAt = c - up * (th * 1.1).toFloat()
+        val size = "${mm(o.box.length)} × ${mm(o.box.width)} × ${mm(o.height)} mm"
+        dxf.text(LAYER_OBJECT_TAGS, sizeAt.x.toDouble(), sizeAt.y.toDouble(), th * 0.8, size, angle, DxfDocument.HAlign.CENTER)
+    }
+
+    private fun clearHeightNote(ceiling: CeilingMap): String {
+        val typical = "Clear height: typical ${mm(ceiling.typicalHeight)} mm"
+        return if (hasLowPoint(ceiling)) "$typical, lowest ${mm(ceiling.minHeight)} mm under obstruction (see $LAYER_CEILING)" else typical
+    }
+
+    /** A beam, duct or pipe hangs noticeably under the ceiling proper. */
+    private fun hasLowPoint(ceiling: CeilingMap) =
+        ceiling.minAt != null && !ceiling.minHeight.isNaN() && ceiling.minHeight < ceiling.typicalHeight - LOW_POINT_MARGIN
+
+    /** Circle and "min <height> mm" at the lowest overhead point; optionally the heights on a 1 m grid. */
+    private fun ceilingHeights(dxf: DxfDocument, ceiling: CeilingMap, th: Double, grid: Boolean) {
+        val lowAt = ceiling.minAt
+        if (lowAt != null && hasLowPoint(ceiling)) {
+            val x = lowAt.x * 1000.0
+            val y = lowAt.y * 1000.0
+            val radius = th * 1.5
+            dxf.circle(LAYER_CEILING, x, y, radius)
+            dxf.text(LAYER_CEILING, x + radius + th * 0.4, y - th * 0.4, th * 0.8, "min ${mm(ceiling.minHeight)} mm")
+        }
+        if (!grid) return
+        // The lowest cell of each 1 m square, written at the square's centre.
+        val per = maxOf(1, Math.round(1f / ceiling.cell))
+        var row = 0
+        while (row < ceiling.rows) {
+            var col = 0
+            while (col < ceiling.cols) {
+                var lowest = Float.NaN
+                for (r in row until minOf(row + per, ceiling.rows)) for (c in col until minOf(col + per, ceiling.cols)) {
+                    val h = ceiling.heightAt(c, r)
+                    if (!h.isNaN() && (lowest.isNaN() || h < lowest)) lowest = h
+                }
+                if (!lowest.isNaN()) {
+                    val x = (ceiling.originX + (col + per / 2f) * ceiling.cell) * 1000.0
+                    val y = (ceiling.originY + (row + per / 2f) * ceiling.cell) * 1000.0
+                    dxf.text(LAYER_CEILING, x, y, th * 0.6, mm(lowest), align = DxfDocument.HAlign.CENTER)
+                }
+                col += per
+            }
+            row += per
+        }
+    }
+
+    /** Door / window schedule as a text table (one TEXT per cell so columns line up); returns the y of its last row. */
+    private fun schedule(dxf: DxfDocument, openings: List<Opening>, tags: Map<String, String>, x: Double, top: Double, th: Double): Double {
         val columns = doubleArrayOf(0.0, 800.0, 2000.0, 3000.0, 4000.0, 5000.0, 6000.0, 7400.0, 8600.0)
         val header = listOf("TAG", "TYPE", "WIDTH", "HEIGHT", "SILL", "HEAD", "FROM LEFT", "SWING", "CHECK")
         dxf.text(LAYER_SCHEDULE, x, top, th * 1.4, "DOOR / WINDOW SCHEDULE (mm, clear opening from scan)")
@@ -212,6 +298,24 @@ object FloorPlanDxf {
             )
             row.forEachIndexed { i, v -> if (v.isNotEmpty()) dxf.text(LAYER_SCHEDULE, x + columns[i], y, th, v) }
         }
+        return y
+    }
+
+    /** Object schedule below the opening schedule: tag, box size, height and wall clearance. */
+    private fun objectSchedule(dxf: DxfDocument, objects: List<SceneObject>, x: Double, top: Double, th: Double) {
+        val columns = doubleArrayOf(0.0, 800.0, 2000.0, 3200.0, 4400.0)
+        val header = listOf("TAG", "LENGTH", "WIDTH", "HEIGHT", "WALL CLEARANCE")
+        dxf.text(LAYER_SCHEDULE, x, top, th * 1.4, "OBJECT SCHEDULE (mm, tightest box around the scanned footprint)")
+        dxf.text(LAYER_SCHEDULE, x, top - th * 2, th * 0.8, "HEIGHT: lowest to highest scanned surface. WALL CLEARANCE: from the footprint to the nearest wall of the plan.")
+        var y = top - th * 4.5
+        header.forEachIndexed { i, h -> dxf.text(LAYER_SCHEDULE, x + columns[i], y, th, h) }
+        y -= th * 0.6
+        dxf.line(LAYER_SCHEDULE, x, y, x + columns.last() + 2000.0, y)
+        for (o in objects.sortedBy { it.id }) {
+            y -= th * 1.8
+            val row = listOf("M${o.id}", mm(o.box.length), mm(o.box.width), mm(o.height), o.wallClearance?.let { mm(it) } ?: "-")
+            row.forEachIndexed { i, v -> dxf.text(LAYER_SCHEDULE, x + columns[i], y, th, v) }
+        }
     }
 
     private fun mm(m: Float) = DxfDrafting.mm(m)
@@ -236,4 +340,7 @@ object FloorPlanDxf {
         // Centre the letters on the circle: TEXT is placed by its baseline.
         dxf.text(LAYER_ELEVATION_KEYS, at.x.toDouble(), at.y - th, th * 2, e.key, align = DxfDocument.HAlign.CENTER)
     }
+
+    /** A beam has to hang this far under the ceiling proper before it is called out. */
+    private const val LOW_POINT_MARGIN = 0.1f
 }
