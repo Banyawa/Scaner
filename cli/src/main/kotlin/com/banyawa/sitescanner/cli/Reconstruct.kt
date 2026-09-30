@@ -13,6 +13,7 @@ import com.banyawa.sitescanner.core.export.Ply
 import com.banyawa.sitescanner.core.floorplan.FloorPlanExtractor
 import com.banyawa.sitescanner.core.floorplan.SiteAlignment
 import com.banyawa.sitescanner.core.mesh.MeshTexturer
+import com.banyawa.sitescanner.core.mesh.TexturingOptions
 import java.io.File
 import kotlin.system.exitProcess
 
@@ -25,15 +26,18 @@ import kotlin.system.exitProcess
  */
 fun main(args: Array<String>) {
     if (args.size < 2) {
-        System.err.println("usage: reconstruct <capture.zip | capture folder> <output folder> [--voxel <metres>] [--max-frames <n>]")
+        System.err.println("usage: reconstruct <capture.zip | capture folder> <output folder> [--voxel <metres>] [--max-frames <n>] [--keep-seams]")
         exitProcess(2)
     }
     var options = ReconstructionOptions()
+    var texturing = TexturingOptions()
     var i = 2
     while (i < args.size) {
         when (args[i]) {
             "--voxel" -> options = options.copy(surfaceVoxelM = args[++i].toFloat())
             "--max-frames" -> options = options.copy(maxFrames = args[++i].toInt())
+            // Leave the photos' exposure differences in the texture (to compare, or to debug the leveling).
+            "--keep-seams" -> texturing = texturing.copy(levelSeams = false)
             else -> {
                 System.err.println("unknown option ${args[i]}")
                 exitProcess(2)
@@ -85,10 +89,14 @@ fun main(args: Array<String>) {
     }
     MeshPreview.renderViews(result.mesh.takeUnless { it.isEmpty() }, result.cloud, outDir)
     if (!result.mesh.isEmpty()) {
-        val textured = runCatching { MeshTexturer(JvmImageDecoder).texture(result.mesh, capture, progress) }
+        val texture = runCatching { MeshTexturer(JvmImageDecoder, texturing).textureWithStats(result.mesh, capture, progress) }
             .onFailure { System.err.println("Texturing skipped: ${it.message}") }
             .getOrNull()
-        if (textured != null) {
+        val textured = texture?.textured
+        if (texture != null && textured != null) {
+            texture.stats.seams?.let { seams ->
+                println("Seams levelled: ${seams.seamPairs} seam vertices across ${seams.charts} charts, difference ${"%.1f".format(seams.seamDifferenceBefore)} -> ${"%.1f".format(seams.seamDifferenceAfter)} levels")
+            }
             File(outDir, "model_textured.glb").outputStream().use {
                 Glb.write(textured.withMesh(MeshFrames.siteYUp(textured.mesh, alignment)), it, captureDir.name, JvmImageEncoder)
             }

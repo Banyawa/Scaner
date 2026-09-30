@@ -81,5 +81,10 @@ class IntList(capacity: Int = 1024) {
 
     operator fun get(i: Int): Int = data[i]
 
+    operator fun set(i: Int, v: Int) {
+        require(i in 0 until size) { "index $i of $size" }
+        data[i] = v
+    }
+
     fun toArray(): IntArray = data.copyOf(size)
 }

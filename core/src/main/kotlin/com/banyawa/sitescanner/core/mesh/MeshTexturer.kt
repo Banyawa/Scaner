@@ -37,6 +37,8 @@ data class TexturingOptions(
     val padding: Int = 4,
     /** JPEG quality for callers encoding the atlas (the GLB export). */
     val quality: Int = 85,
+    /** Even out the exposure differences between the photo charts, so their seams do not show ([SeamLeveler]). */
+    val levelSeams: Boolean = true,
 )
 
 /** What a texturing run did, for logs and tests. */
@@ -56,6 +58,8 @@ class TexturingStats(
     val triangleRect: IntArray,
     /** Atlas rectangles copied from the photos: x, y, width, height in atlas pixels each, gutter included. */
     val atlasRects: IntArray,
+    /** What the seam leveling did; null when it was off. */
+    val seams: SeamLevelingStats?,
     val millis: Long,
 )
 
@@ -433,6 +437,8 @@ class MeshTexturer(private val decoder: ImageDecoder, private val options: Textu
         }
         val triangleRect = IntArray(triangles) { t -> if (groupOf[t] < rects.count) renumber[groupOf[t]] else -1 }
         val chartCount = (0 until charts.count).count { c -> rects.rectOf[c] >= 0 && !dropped[rects.rectOf[c]] }
+        val output = TexturedMesh(TriangleMesh(positions, colors, indices), uv, atlas)
+        val seams = if (options.levelSeams) SeamLeveler(SeamLevelingOptions(gutter = pad)).level(output) else null
         val stats = TexturingStats(
             framesConsidered = views.size,
             framesUsed = usedFrames,
@@ -443,9 +449,10 @@ class MeshTexturer(private val decoder: ImageDecoder, private val options: Textu
             scale = layout.scale,
             triangleRect = triangleRect,
             atlasRects = rectBoxes.toArray(),
+            seams = seams,
             millis = (System.nanoTime() - start) / 1_000_000,
         )
-        return TexturingResult(TexturedMesh(TriangleMesh(positions, colors, indices), uv, atlas), stats)
+        return TexturingResult(output, stats)
     }
 
     // ---------------------------------------------------------------- parts

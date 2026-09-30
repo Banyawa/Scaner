@@ -115,6 +115,85 @@ class MeshTexturerTest {
         writeAndCheckGlb(t, "room")
     }
 
+    /**
+     * The camera's exposure wandering from frame to frame (as a phone's auto exposure
+     * does) makes every chart a different brightness: the seams show. Leveling removes
+     * most of the difference, and the texture still shows the room's colours.
+     */
+    @Test
+    fun levelsTheSeamsBetweenPhotosOfDifferentExposure() {
+        val k = CameraIntrinsics(250f, 250f, 160f, 120f, 320, 240)
+        val capture = record(40, k, k) { i -> 0.75f + 0.5f * ((i * 7) % 5) / 4f }
+        val room = roomMesh(0.1f)
+        val plain = MeshTexturer(decoder, TexturingOptions(levelSeams = false)).textureWithStats(room.mesh, capture)!!
+        val levelled = MeshTexturer(decoder).textureWithStats(room.mesh, capture)!!
+        // The same walk at one exposure, unlevelled: how far apart the sides of a seam are anyway (JPEG, alignment).
+        val steady = MeshTexturer(decoder, TexturingOptions(levelSeams = false)).textureWithStats(room.mesh, record(40, k, k))!!
+        assertNull(plain.stats.seams)
+        val seams = levelled.stats.seams!!
+        println("PERF seams: ${seams.charts} charts, ${seams.seamPairs} pairs, ${seams.seamDifferenceBefore} -> ${seams.seamDifferenceAfter} levels, max ${seams.maxCorrection}, ${seams.millis} ms")
+        assertTrue("seams before ${seams.seamDifferenceBefore}", seams.seamDifferenceBefore > 8f)
+        assertTrue("seams after ${seams.seamDifferenceAfter}", seams.seamDifferenceAfter < seams.seamDifferenceBefore / 3)
+        // The step across a chart boundary, measured independently: the atlas colour of the
+        // middle of every seam edge, as each side's chart shows it.
+        val stepBefore = seamStep(plain)
+        val stepAfter = seamStep(levelled)
+        val stepSteady = seamStep(steady)
+        println("PERF seam step: $stepBefore -> $stepAfter (steady exposure, unlevelled: $stepSteady)")
+        assertTrue("seam step $stepBefore -> $stepAfter", stepAfter < stepBefore / 2)
+        assertTrue("seam step $stepAfter, steady exposure $stepSteady", stepAfter < stepSteady * 1.3f + 1f)
+        checkTexturing(room, levelled, minTextured = 0.8, minTrueColour = 0.9)
+    }
+
+    /** Mean colour step across the seams: for every edge shared by two charts, the atlas colour at its middle on each side. */
+    private fun seamStep(result: TexturingResult): Float {
+        val t = result.textured
+        val mesh = t.mesh
+        val rect = result.stats.triangleRect
+        // Edges by their two positions, with the chart's inner sample point.
+        val byEdge = HashMap<String, ArrayList<Pair<Int, FloatArray>>>()
+        for (tri in 0 until t.triangleCount) {
+            if (rect[tri] < 0) continue
+            for (j in 0 until 3) {
+                val a = mesh.indices[tri * 3 + j]
+                val b = mesh.indices[tri * 3 + (j + 1) % 3]
+                val key = listOf(a, b).map { v -> (0 until 3).map { mesh.positions[v * 3 + it] } }.sortedBy { it.toString() }.toString()
+                val u = (t.uv[a * 2] + t.uv[b * 2]) / 2
+                val v = (t.uv[a * 2 + 1] + t.uv[b * 2 + 1]) / 2
+                byEdge.getOrPut(key) { ArrayList() }.add(rect[tri] to floatArrayOf(u, v))
+            }
+        }
+        var sum = 0.0
+        var count = 0
+        for (sides in byEdge.values) {
+            if (sides.size != 2 || sides[0].first == sides[1].first) continue
+            val p = sample(t, sides[0].second[0], sides[0].second[1])
+            val q = sample(t, sides[1].second[0], sides[1].second[1])
+            for (shift in intArrayOf(16, 8, 0)) sum += abs((p shr shift and 0xFF) - (q shr shift and 0xFF))
+            count += 3
+        }
+        assertTrue("seam edges: $count", count > 300)
+        return (sum / count).toFloat()
+    }
+
+    private fun sample(t: TexturedMesh, u: Float, v: Float): Int {
+        val atlas = t.atlas
+        val fx = u * atlas.width - 0.5f
+        val fy = v * atlas.height - 0.5f
+        val x0 = floor(fx).toInt()
+        val y0 = floor(fy).toInt()
+        val tx = fx - x0
+        val ty = fy - y0
+        var out = 0
+        for (shift in intArrayOf(16, 8, 0)) {
+            fun at(x: Int, y: Int) = atlas.pixels[y.coerceIn(0, atlas.height - 1) * atlas.width + x.coerceIn(0, atlas.width - 1)] shr shift and 0xFF
+            val top = at(x0, y0) * (1 - tx) + at(x0 + 1, y0) * tx
+            val bottom = at(x0, y0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1) * tx
+            out = (out shl 8) or (top * (1 - ty) + bottom * ty).roundToInt().coerceIn(0, 255)
+        }
+        return out
+    }
+
     @Test
     fun imagesStoredSmallerThanRecordedStillLineUp() {
         // Intrinsics recorded for 640 × 480 but the JPEGs are half that: coordinates scale.
@@ -259,6 +338,7 @@ class MeshTexturerTest {
             if (diff <= 40) right++
         }
         println("true colour: $right of $checked checked triangles; textured ${"%.3f".format(textured)}")
+        stats.seams?.let { println("PERF seams: ${it.charts} charts, ${it.seamPairs} pairs, ${it.seamDifferenceBefore} -> ${it.seamDifferenceAfter} levels, max ${it.maxCorrection}, ${it.millis} ms") }
         assertTrue("true colour: $right of $checked", checked > t.triangleCount / 3 && right >= checked * minTrueColour)
     }
 
@@ -508,7 +588,7 @@ class MeshTexturerTest {
      * and down; the poses and [recorded] intrinsics are stored, the images rendered with
      * [stored] (their actual size).
      */
-    private fun record(frames: Int, recorded: CameraIntrinsics, stored: CameraIntrinsics): Capture {
+    private fun record(frames: Int, recorded: CameraIntrinsics, stored: CameraIntrinsics, exposure: (Int) -> Float = { 1f }): Capture {
         val dir = tmp.newFolder()
         val writer = CaptureWriter(dir)
         val pixels = IntArray(stored.width * stored.height)
@@ -527,13 +607,21 @@ class MeshTexturerTest {
                 val dx = pose[0] * nx - pose[4] * ny - pose[8]
                 val dy = pose[1] * nx - pose[5] * ny - pose[9]
                 val dz = pose[2] * nx - pose[6] * ny - pose[10]
-                pixels[v * k.width + u] = trace(eye.x, eye.y, eye.z, dx, dy, dz)
+                pixels[v * k.width + u] = exposed(trace(eye.x, eye.y, eye.z, dx, dy, dz), exposure(i))
             }
             // 0.3 s apart: turning at about half a radian a second, as someone scanning a room.
             writer.add(i * 300_000_000L, pose, jpeg(pixels, k.width, k.height, 92), recorded)
         }
         writer.close(Manifest(device = "synthetic", floorY = 0f))
         return Capture.open(dir)
+    }
+
+    /** [rgb] photographed at [gain] times the exposure. */
+    private fun exposed(rgb: Int, gain: Float): Int {
+        if (gain == 1f) return rgb
+        var out = 0
+        for (shift in intArrayOf(16, 8, 0)) out = (out shl 8) or ((rgb shr shift and 0xFF) * gain).roundToInt().coerceIn(0, 255)
+        return out
     }
 
     private fun jpeg(pixels: IntArray, w: Int, h: Int, quality: Int): ByteArray {

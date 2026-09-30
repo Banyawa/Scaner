@@ -165,9 +165,13 @@ class ModelBuilder(private val repository: ProjectRepository) {
             report(scanId, RECONSTRUCTION_SHARE + (1f - RECONSTRUCTION_SHARE) * done / total.coerceAtLeast(1))
         }
         return try {
-            val textured = MeshTexturer(AndroidImageDecoder, options).texture(mesh, capture, listener) ?: return null
+            val result = MeshTexturer(AndroidImageDecoder, options).textureWithStats(mesh, capture, listener) ?: return null
+            val textured = result.textured
             val jpeg = AndroidImageEncoder.encodeJpeg(textured.atlas, options.quality)
-            Log.i(TAG, "Textured ${textured.triangleCount} triangles with a ${textured.atlas.width}x${textured.atlas.height} atlas")
+            Log.i(TAG, "Textured ${textured.triangleCount} triangles with a ${textured.atlas.width}x${textured.atlas.height} atlas in ${result.stats.millis} ms")
+            result.stats.seams?.let { seams ->
+                Log.i(TAG, "Levelled ${seams.seamPairs} seam vertices across ${seams.charts} charts: ${seams.seamDifferenceBefore} -> ${seams.seamDifferenceAfter} levels in ${seams.millis} ms")
+            }
             Texture(textured, jpeg)
         } catch (e: OutOfMemoryError) {
             Log.w(TAG, "Not enough memory to texture the model; keeping vertex colours", e)
